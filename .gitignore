@@ -3,3 +3,5 @@
 /docs/
 compile_commands.json
 *.spv
+*.exe
+*.bin
