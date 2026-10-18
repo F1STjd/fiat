@@ -1,4 +1,5 @@
 /build/
 /.cache/
 /docs/
-compile_commands.json*.spv
+compile_commands.json
+*.spv
