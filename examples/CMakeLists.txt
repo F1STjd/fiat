@@ -1,0 +1,6 @@
+foreach(example IN ITEMS multiply increment)
+  add_executable(fiat_${example} ${example}.cpp)
+  target_link_libraries(fiat_${example} PRIVATE fiat::fiat)
+  set_target_properties(fiat_${example} PROPERTIES CXX_MODULE_STD ON)
+  vkpp_enable_warnings(fiat_${example})
+endforeach()

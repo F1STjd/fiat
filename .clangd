@@ -1,0 +1,25 @@
+CompileFlags:
+  CompilationDatabase: build/clang-debug
+  Remove:
+    - -W*
+    - -pedantic-errors
+    - -fanalyzer
+    - -fdiagnostics-color
+    - -fcolor-diagnostics
+    - -fdiagnostics-urls=*
+    - -fdiagnostics-parseable-fixits
+    - -fdiagnostics-generate-patch
+    - -fdiagnostics-show-option
+    - -fmodules-ts
+    - -fmodule-mapper=*
+    - -fdeps-format=*
+
+Diagnostics:
+  UnusedIncludes: None
+  MissingIncludes: None
+
+---
+If:
+  PathMatch: ".*\\.cppm$"
+CompileFlags:
+  Add: [-x, c++-module]
