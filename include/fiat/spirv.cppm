@@ -8,6 +8,7 @@ namespace fiat::spirv
 export inline constexpr std::uint32_t magic {0x07'23'02'03U};
 export inline constexpr std::uint32_t version_1_6 {0x00'01'06'00U};
 export inline constexpr std::uint32_t generator {};
+export inline constexpr std::size_t   header_size {5UZ};
 
 export enum class opcode : std::uint16_t
 {
@@ -60,6 +61,7 @@ export enum class decoration : std::uint32_t
 export enum class linkage_type : std::uint32_t
 {
   exported = 0,
+  imported = 1,
 };
 
 export enum class function_control : std::uint32_t
@@ -102,6 +104,11 @@ public:
   void
   emit(opcode code, std::initializer_list<std::uint32_t> operands)
   { emit(code, std::span {operands}); }
+
+  constexpr
+  void
+  append(std::span<const std::uint32_t> instruction)
+  { words_.append_range(instruction); }
 
   [[nodiscard]]
   constexpr

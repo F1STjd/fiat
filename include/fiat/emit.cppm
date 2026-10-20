@@ -68,89 +68,70 @@ opcode_for(operation code, scalar_kind kind) -> spirv::opcode
   std::unreachable();
 }
 
-export
-template<scalar Element>
-constexpr auto
-emit_function_module(std::span<const instruction> instructions)
-  -> std::vector<std::uint32_t>
+struct function_layout
 {
-  constexpr std::uint32_t type_id {1U};
-  constexpr std::uint32_t function_type_id {2U};
-  constexpr std::uint32_t function_id {3U};
-  const auto module_id = [](std::uint32_t trace_id) -> std::uint32_t {
-    return trace_id + function_id;
-  };
+  std::uint32_t type {};
+  std::uint32_t function_type {};
+  std::uint32_t function {};
+  std::uint32_t offset {};
+};
 
-  const std::uint32_t largest = std::ranges::max(
-    instructions | std::views::transform(&instruction::result));
-  const std::uint32_t label_id = module_id(largest) + 1U;
+constexpr
+auto
+module_id(const function_layout& layout, std::uint32_t trace_id)
+  -> std::uint32_t
+{ return trace_id + layout.offset; }
 
-  spirv::writer out {label_id + 1U};
-  out.emit(
-    spirv::opcode::capability, {std::to_underlying(spirv::capability::shader)});
-  out.emit(
-    spirv::opcode::capability,
-    {std::to_underlying(spirv::capability::linkage)});
-  out.emit(
-    spirv::opcode::memory_model,
-    {
-      std::to_underlying(spirv::addressing_model::logical),
-      std::to_underlying(spirv::memory_model::glsl450),
-    });
+constexpr
+auto
+label_id(
+  const function_layout& layout, std::span<const instruction> instructions)
+  -> std::uint32_t
+{
+  return module_id(
+           layout,
+           std::ranges::max(
+             instructions | std::views::transform(&instruction::result))) +
+         1U;
+}
 
-  std::vector<std::uint32_t> decorate {
-    function_id,
-    std::to_underlying(spirv::decoration::linkage_attributes),
-  };
-  decorate.append_range(spirv::literal_string(operation_symbol));
-  decorate.push_back(std::to_underlying(spirv::linkage_type::exported));
-  out.emit(spirv::opcode::decorate, decorate);
-
-  if constexpr (std::same_as<Element, float>)
-  {
-    out.emit(spirv::opcode::type_float, {type_id, 32U});
-  }
-  else
-  {
-    out.emit(
-      spirv::opcode::type_int,
-      {
-        type_id,
-        32U,
-        std::same_as<Element, std::int32_t> ? 1U : 0U,
-      });
-  }
-  out.emit(spirv::opcode::type_function, {function_type_id, type_id, type_id});
-
+constexpr
+void
+emit_constants(
+  spirv::writer&               out,
+  const function_layout&       layout,
+  std::span<const instruction> instructions)
+{
   for (const instruction& item : instructions)
   {
     if (item.code == operation::constant)
     {
       out.emit(
         spirv::opcode::constant,
-        {
-          type_id,
-          module_id(item.result),
-          item.literal,
-        });
+        {layout.type, module_id(layout, item.result), item.literal});
     }
   }
+}
 
+constexpr
+void
+emit_definition(
+  spirv::writer&               out,
+  const function_layout&       layout,
+  std::span<const instruction> instructions)
+{
   out.emit(
     spirv::opcode::function,
     {
-      type_id,
-      function_id,
+      layout.type,
+      layout.function,
       std::to_underlying(spirv::function_control::inlined),
-      function_type_id,
+      layout.function_type,
     });
   out.emit(
     spirv::opcode::function_parameter,
-    {
-      type_id,
-      module_id(instructions.front().result),
-    });
-  out.emit(spirv::opcode::label, {label_id});
+    {layout.type, module_id(layout, instructions.front().result)});
+  out.emit(spirv::opcode::label, {label_id(layout, instructions)});
 
   for (const instruction& item : instructions)
   {
@@ -166,10 +147,10 @@ emit_function_module(std::span<const instruction> instructions)
       out.emit(
         opcode_for(item.code, item.kind),
         {
-          type_id,
-          module_id(item.result),
-          module_id(item.left),
-          module_id(item.right),
+          layout.type,
+          module_id(layout, item.result),
+          module_id(layout, item.left),
+          module_id(layout, item.right),
         });
       break;
     }
@@ -178,20 +159,76 @@ emit_function_module(std::span<const instruction> instructions)
       out.emit(
         opcode_for(item.code, item.kind),
         {
-          type_id,
-          module_id(item.result),
-          module_id(item.left),
+          layout.type,
+          module_id(layout, item.result),
+          module_id(layout, item.left),
         });
       break;
     }
     case operation::result :
     {
-      out.emit(spirv::opcode::return_value, {module_id(item.left)});
+      out.emit(spirv::opcode::return_value, {module_id(layout, item.left)});
       break;
     }
     }
   }
   out.emit(spirv::opcode::function_end, {});
+}
+
+export
+template<scalar Element>
+constexpr auto
+emit_function_module(std::span<const instruction> instructions)
+  -> std::vector<std::uint32_t>
+{
+  constexpr function_layout layout {
+    .type          = 1U,
+    .function_type = 2U,
+    .function      = 3U,
+    .offset        = 3U,
+  };
+
+  spirv::writer out {label_id(layout, instructions) + 1U};
+  out.emit(
+    spirv::opcode::capability, {std::to_underlying(spirv::capability::shader)});
+  out.emit(
+    spirv::opcode::capability,
+    {std::to_underlying(spirv::capability::linkage)});
+  out.emit(
+    spirv::opcode::memory_model,
+    {
+      std::to_underlying(spirv::addressing_model::logical),
+      std::to_underlying(spirv::memory_model::glsl450),
+    });
+
+  std::vector<std::uint32_t> decorate {
+    layout.function,
+    std::to_underlying(spirv::decoration::linkage_attributes),
+  };
+  decorate.append_range(spirv::literal_string(operation_symbol));
+  decorate.push_back(std::to_underlying(spirv::linkage_type::exported));
+  out.emit(spirv::opcode::decorate, decorate);
+
+  if constexpr (std::same_as<Element, float>)
+  {
+    out.emit(spirv::opcode::type_float, {layout.type, 32U});
+  }
+  else
+  {
+    out.emit(
+      spirv::opcode::type_int,
+      {
+        layout.type,
+        32U,
+        std::same_as<Element, std::int32_t> ? 1U : 0U,
+      });
+  }
+  out.emit(
+    spirv::opcode::type_function,
+    {layout.function_type, layout.type, layout.type});
+
+  emit_constants(out, layout, instructions);
+  emit_definition(out, layout, instructions);
   return std::move(out).words();
 }
 
