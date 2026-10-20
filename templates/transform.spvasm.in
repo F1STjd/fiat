@@ -1,0 +1,69 @@
+; fiat transform template (N2). @ELEMENT@ = float | int | uint (CMake configure_file).
+; Assembled with spirv-as --target-env spv1.6, validated with spirv-val --target-env spv1.6.
+; The splicer replaces the Import declaration of %fiat_operation with the traced
+; definition and removes OpCapability Linkage plus the LinkageAttributes decoration.
+               OpCapability Shader
+               OpCapability PhysicalStorageBufferAddresses
+               OpCapability Linkage
+               OpMemoryModel PhysicalStorageBuffer64 GLSL450
+               OpEntryPoint GLCompute %main "fiat_transform" %global_id %push
+               OpExecutionModeId %main LocalSizeId %group_size %one %one
+               OpDecorate %fiat_operation LinkageAttributes "fiat_operation" Import
+               OpDecorate %global_id BuiltIn GlobalInvocationId
+               OpDecorate %group_size SpecId 0
+               OpDecorate %element_pointer ArrayStride 4
+               OpDecorate %push_type Block
+               OpMemberDecorate %push_type 0 Offset 0
+               OpMemberDecorate %push_type 1 Offset 8
+               OpMemberDecorate %push_type 2 Offset 16
+               OpMemberDecorate %push_type 3 Offset 20
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+      %float = OpTypeFloat 32
+        %int = OpTypeInt 32 1
+       %uint = OpTypeInt 32 0
+     %uint_3 = OpTypeVector %uint 3
+%element_pointer = OpTypePointer PhysicalStorageBuffer %@ELEMENT@
+  %push_type = OpTypeStruct %element_pointer %element_pointer %uint %uint
+%push_pointer = OpTypePointer PushConstant %push_type
+%push_element_pointer = OpTypePointer PushConstant %element_pointer
+%push_uint_pointer = OpTypePointer PushConstant %uint
+%input_uint_3_pointer = OpTypePointer Input %uint_3
+%main_type = OpTypeFunction %void
+%operation_type = OpTypeFunction %@ELEMENT@ %@ELEMENT@
+       %zero = OpConstant %uint 0
+        %one = OpConstant %uint 1
+        %two = OpConstant %uint 2
+      %three = OpConstant %uint 3
+ %group_size = OpSpecConstant %uint 256
+  %global_id = OpVariable %input_uint_3_pointer Input
+       %push = OpVariable %push_pointer PushConstant
+%fiat_operation = OpFunction %@ELEMENT@ None %operation_type
+%operation_parameter = OpFunctionParameter %@ELEMENT@
+               OpFunctionEnd
+       %main = OpFunction %void None %main_type
+      %entry = OpLabel
+ %invocation = OpLoad %uint_3 %global_id
+ %invocation_x = OpCompositeExtract %uint %invocation 0
+%first_member = OpAccessChain %push_uint_pointer %push %three
+      %first = OpLoad %uint %first_member
+      %index = OpIAdd %uint %first %invocation_x
+%count_member = OpAccessChain %push_uint_pointer %push %two
+      %count = OpLoad %uint %count_member
+   %in_range = OpULessThan %bool %index %count
+               OpSelectionMerge %done None
+               OpBranchConditional %in_range %body %done
+       %body = OpLabel
+%input_member = OpAccessChain %push_element_pointer %push %zero
+      %input = OpLoad %element_pointer %input_member
+%output_member = OpAccessChain %push_element_pointer %push %one
+     %output = OpLoad %element_pointer %output_member
+%input_element = OpPtrAccessChain %element_pointer %input %index
+     %source = OpLoad %@ELEMENT@ %input_element Aligned 4
+     %result = OpFunctionCall %@ELEMENT@ %fiat_operation %source
+%output_element = OpPtrAccessChain %element_pointer %output %index
+               OpStore %output_element %result Aligned 4
+               OpBranch %done
+       %done = OpLabel
+               OpReturn
+               OpFunctionEnd
