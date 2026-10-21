@@ -121,3 +121,39 @@ private:
 };
 
 } // namespace fiat::spirv
+
+namespace fiat
+{
+
+export constexpr
+auto
+fingerprint(std::span<const std::uint32_t> words) -> std::uint64_t
+{
+  constexpr auto offset_basis {0xCB'F2'9C'E4'84'22'23'25ULL};
+  constexpr auto prime {0x00'00'01'00'00'00'01'B3ULL};
+  auto           hash {offset_basis};
+  for (const auto word : words)
+  {
+    for (const auto index : std::views::indices(4U))
+    {
+      hash ^= (word >> (8U * index)) & 0xFFU;
+      hash += prime;
+    }
+  }
+  return hash;
+}
+
+export
+auto
+write_spirv(
+  const std::filesystem::path& path, std::span<const std::uint32_t> words)
+  -> bool
+{
+  std::ofstream file {path, std::ios::binary};
+  file.write(
+    reinterpret_cast<const char*>(words.data()),
+    static_cast<std::streamsize>(words.size_bytes()));
+  return static_cast<bool>(file);
+}
+
+} // namespace fiat
