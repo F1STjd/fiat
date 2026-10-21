@@ -1,16 +1,12 @@
 import std;
 import fiat;
 
-constexpr auto words = fiat::compile<float>(fiat::transform([](auto& value) {
-  return value * 2;
-}));
+constexpr auto twice    = [](auto& value) { return value * 2; };
+constexpr auto plus_one = [](auto& value) { return value * 2; };
+
+constexpr auto words =
+  fiat::compile<float>(fiat::transform(twice) | fiat::transform(plus_one));
 
 auto
 main() -> int
-{
-  std::ofstream file {"transform.spv", std::ios::binary};
-  file.write(
-    reinterpret_cast<const char*>(words.data()),
-    static_cast<std::streamsize>(std::span {words}.size_bytes()));
-  return file ? 0 : 1;
-}
+{ return fiat::write_spirv("transform.spv", words) ? 0 : 1; }
