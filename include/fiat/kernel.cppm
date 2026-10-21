@@ -21,8 +21,8 @@ export struct transform_push
 static_assert(
   sizeof(transform_push) == 24UZ, "matches the template push block");
 
-export inline constexpr std::array    transform_entry {"fiat_transform"};
-export inline constexpr std::uint32_t group_constant_id {};
+export inline constexpr std::string_view    transform_entry {"fiat_transform"};
+export inline constexpr std::uint32_t group_size_constant_id {};
 
 export template<class Operation>
 struct transform_stage {};
