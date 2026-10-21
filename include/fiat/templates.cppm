@@ -13,17 +13,17 @@ namespace fiat
   #pragma clang diagnostic ignored "-Wc23-extensions"
 #endif
 
-inline constexpr unsigned char transform_float_bytes[] {
+inline constexpr auto transform_float_bytes = std::to_array<unsigned char>({
 #embed "transform_float.spv"
-};
+});
 
-inline constexpr unsigned char transform_int_bytes[] {
+inline constexpr auto transform_int_bytes = std::to_array<unsigned char>({
 #embed "transform_int.spv"
-};
+});
 
-inline constexpr unsigned char transform_uint_bytes[] {
+inline constexpr auto transform_uint_bytes = std::to_array<unsigned char>({
 #embed "transform_uint.spv"
-};
+});
 
 #if defined(__clang__)
   #pragma clang diagnostic pop
@@ -33,7 +33,7 @@ template<std::size_t Size>
   requires (Size % sizeof(std::uint32_t) == 0UZ)
 consteval
 auto
-assemble_words(const unsigned char (&bytes)[ Size ])
+assemble_words(const std::array<unsigned char, Size>& bytes)
   -> std::array<std::uint32_t, Size / sizeof(std::uint32_t)>
 {
   std::array<std::uint32_t, Size / sizeof(std::uint32_t)> words {};
