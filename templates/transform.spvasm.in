@@ -12,19 +12,23 @@
                OpDecorate %global_id BuiltIn GlobalInvocationId
                OpDecorate %group_size SpecId 0
                OpDecorate %element_pointer ArrayStride 4
+               OpDecorate %argument_array ArrayStride 4
                OpDecorate %push_type Block
                OpMemberDecorate %push_type 0 Offset 0
                OpMemberDecorate %push_type 1 Offset 8
                OpMemberDecorate %push_type 2 Offset 16
                OpMemberDecorate %push_type 3 Offset 20
+               OpMemberDecorate %push_type 4 Offset 24
        %void = OpTypeVoid
        %bool = OpTypeBool
       %float = OpTypeFloat 32
         %int = OpTypeInt 32 1
        %uint = OpTypeInt 32 0
+%argument_count = OpConstant %uint 26
+%argument_array = OpTypeArray %uint %argument_count
      %uint_3 = OpTypeVector %uint 3
 %element_pointer = OpTypePointer PhysicalStorageBuffer %@ELEMENT@
-  %push_type = OpTypeStruct %element_pointer %element_pointer %uint %uint
+  %push_type = OpTypeStruct %element_pointer %element_pointer %uint %uint %argument_array
 %push_pointer = OpTypePointer PushConstant %push_type
 %push_element_pointer = OpTypePointer PushConstant %element_pointer
 %push_uint_pointer = OpTypePointer PushConstant %uint
