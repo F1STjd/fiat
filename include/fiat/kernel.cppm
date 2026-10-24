@@ -129,7 +129,7 @@ export
 template<class Operation, class... Arguments>
 constexpr auto
 transform(Operation, Arguments... arguments)
-  -> transform_stage<chain<bound_operation<Operation>, Arguments...>>
+  -> transform_stage<chain<bound_operation<Operation, Arguments...>>>
 {
   static_assert(
     std::is_empty_v<Operation>,
