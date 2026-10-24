@@ -9,17 +9,81 @@ namespace fiat
 
 export inline constexpr std::string_view operation_symbol {"fiat_operation"};
 
-export template<class Operation, class Element>
-concept traceable =
+template<class Operation>
+struct arguments_of
+{
+  using type = std::tuple<>;
+};
+
+template<class Operation>
+  requires requires { typename Operation::argument_tuple; }
+struct arguments_of<Operation>
+{
+  using type = typename Operation::argument_tuple;
+};
+
+export template<class Operation, class Element, class... Arguments>
+concept traceable_call =
   scalar<Element> &&
   std::is_empty_v<Operation> &&
   std::default_initializable<Operation> &&
-  std::invocable<Operation, value<Element>&> &&
+  (std::same_as<Arguments, Element> && ...) &&
+  std::invocable<Operation, value<Element>&, const value<Arguments>&...> &&
   (std::same_as<
-     std::invoke_result_t<Operation, value<Element>&>,
+     std::invoke_result_t<Operation, value<Element>&, const value<Arguments>&...>,
      value<Element>
    > ||
-    std::is_void_v<std::invoke_result_t<Operation, value<Element>&>>);
+    std::is_void_v<
+      std::invoke_result_t<Operation, value<Element>&, const value<Arguments>&...>
+    >);
+
+template<class Operation, class Element, class Arguments>
+inline constexpr bool traceable_arguments {false};
+
+template<class Operation, class Element, class... Arguments>
+inline constexpr bool
+  traceable_arguments<Operation, Element, std::tuple<Arguments...>> =
+    traceable_call<Operation, Element, Arguments...>;
+
+export template<class Operation, class Element>
+concept traceable =
+  scalar<Element> &&
+  traceable_arguments<Operation, Element, typename arguments_of<Operation>::type>;
+
+template<
+  class Operation,
+  scalar Element,
+  class... Arguments,
+  std::size_t... Slots
+>
+constexpr
+void
+trace_call(
+  [[maybe_unused]] recorder& target,
+  value<Element>&            parameter,
+  std::type_identity<std::tuple<Arguments...>>,
+  std::index_sequence<Slots...>)
+{
+  [[maybe_unused]]
+  const std::tuple<value<Arguments>...> arguments {
+    value<Arguments> {
+      target,
+      target.emit_argument(
+        kind_of<Arguments>, static_cast<std::uint32_t>(Slots)),
+    }...,
+  };
+  if constexpr (
+    std::is_void_v<
+      std::invoke_result_t<Operation, value<Element>&, const value<Arguments>&...>
+    >)
+  {
+    Operation {}(parameter, std::get<Slots>(arguments)...);
+  }
+  else
+  {
+    parameter = Operation {}(parameter, std::get<Slots>(arguments)...);
+  }
+}
 
 export
 template<scalar Element, class Operation>
@@ -27,16 +91,15 @@ template<scalar Element, class Operation>
 constexpr auto
 trace() -> std::vector<instruction>
 {
+  using argument_tuple = typename arguments_of<Operation>::type;
+
   recorder       target {};
   value<Element> parameter {target, target.emit_parameter(kind_of<Element>)};
-  if constexpr (std::is_void_v<std::invoke_result_t<Operation, value<Element>&>>)
-  {
-    Operation {}(parameter);
-  }
-  else
-  {
-    parameter = Operation {}(parameter);
-  }
+  trace_call<Operation>(
+    target,
+    parameter,
+    std::type_identity<argument_tuple> {},
+    std::make_index_sequence<std::tuple_size_v<argument_tuple>> {});
   target.emit_result(kind_of<Element>, parameter.id());
   return std::move(target).instructions();
 }
@@ -285,13 +348,16 @@ emit_function_module(std::span<const instruction> instructions)
 }
 
 export template<scalar Element, class Operation>
-  requires traceable<Operation, Element>
+  requires (traceable<Operation, Element> &&
+             std::tuple_size_v<typename arguments_of<Operation>::type> == 0UZ)
 inline constexpr std::size_t word_count =
   emit_function_module<Element>(trace<Element, Operation>()).size();
 
 export
 template<scalar Element, class Operation>
-  requires traceable<Operation, Element>
+  requires (
+    traceable<Operation, Element> &&
+    std::tuple_size_v<typename arguments_of<Operation>::type> == 0UZ)
 consteval auto
 compile(Operation) -> std::array<std::uint32_t, word_count<Element, Operation>>
 {
