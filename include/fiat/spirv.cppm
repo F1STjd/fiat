@@ -16,12 +16,17 @@ export enum class opcode : std::uint16_t
   capability         = 17,
   type_int           = 21,
   type_float         = 22,
+  type_pointer       = 32,
   type_function      = 33,
   constant           = 43,
   function           = 54,
   function_parameter = 55,
   function_end       = 56,
+  variable           = 59,
+  load               = 61,
+  access_chain       = 65,
   decorate           = 71,
+  bitcast            = 124,
   snegate            = 126,
   fnegate            = 127,
   iadd               = 128,
@@ -51,6 +56,11 @@ export enum class addressing_model : std::uint32_t
 export enum class memory_model : std::uint32_t
 {
   glsl450 = 1,
+};
+
+export enum class storage_class : std::uint32_t
+{
+  push_constant = 9,
 };
 
 export enum class decoration : std::uint32_t

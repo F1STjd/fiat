@@ -35,7 +35,12 @@ export enum class operation : std::uint8_t
   divide,
   negate,
   result,
+  argument_address,
+  argument_load,
+  argument_cast,
 };
+
+inline constexpr std::uint32_t argument_member {4U};
 
 export struct instruction
 {
@@ -54,6 +59,20 @@ public:
   auto
   emit_parameter(scalar_kind kind) -> std::uint32_t
   { return push(operation::parameter, kind, 0U, 0U, 0U); }
+
+  constexpr
+  auto
+  emit_argument(scalar_kind kind, std::uint32_t slot) -> std::uint32_t
+  {
+    const auto member = emit_constant(scalar_kind::uint32, argument_member);
+    const auto index  = emit_constant(scalar_kind::uint32, slot);
+    const auto address =
+      push(operation::argument_address, scalar_kind::uint32, member, index, 0U);
+    const auto bits =
+      push(operation::argument_load, scalar_kind::uint32, address, 0U, 0U);
+    if (kind == scalar_kind::uint32) { return bits; }
+    return push(operation::argument_cast, kind, bits, 0U, 0U);
+  }
 
   constexpr
   auto

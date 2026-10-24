@@ -61,9 +61,12 @@ opcode_for(operation code, scalar_kind kind) -> spirv::opcode
   }
   case operation::negate :
     return floating ? spirv::opcode::fnegate : spirv::opcode::snegate;
-  case operation::parameter :
-  case operation::constant  :
-  case operation::result    : break;
+  case operation::parameter        :
+  case operation::constant         :
+  case operation::result           :
+  case operation::argument_address :
+  case operation::argument_load    :
+  case operation::argument_cast    : break;
   }
   std::unreachable();
 }
@@ -74,7 +77,16 @@ struct function_layout
   std::uint32_t function_type {};
   std::uint32_t function {};
   std::uint32_t offset {};
+  scalar_kind   element {};
+  std::uint32_t uint_type {};
+  std::uint32_t uint_pointer {};
+  std::uint32_t push {};
 };
+
+constexpr
+auto
+constant_type(const function_layout& layout, scalar_kind kind) -> std::uint32_t
+{ return kind == layout.element ? layout.type : layout.uint_type; }
 
 constexpr
 auto
@@ -108,7 +120,11 @@ emit_constants(
     {
       out.emit(
         spirv::opcode::constant,
-        {layout.type, module_id(layout, item.result), item.literal});
+        {
+          constant_type(layout, item.kind),
+          module_id(layout, item.result),
+          item.literal,
+        });
     }
   }
 }
@@ -170,6 +186,41 @@ emit_definition(
       out.emit(spirv::opcode::return_value, {module_id(layout, item.left)});
       break;
     }
+    case operation::argument_address :
+    {
+      out.emit(
+        spirv::opcode::access_chain,
+        {
+          layout.uint_pointer,
+          module_id(layout, item.result),
+          layout.push,
+          module_id(layout, item.left),
+          module_id(layout, item.right),
+        });
+      break;
+    }
+    case operation::argument_load :
+    {
+      out.emit(
+        spirv::opcode::load,
+        {
+          layout.uint_type,
+          module_id(layout, item.result),
+          module_id(layout, item.left),
+        });
+      break;
+    }
+    case operation::argument_cast :
+    {
+      out.emit(
+        spirv::opcode::bitcast,
+        {
+          layout.type,
+          module_id(layout, item.result),
+          module_id(layout, item.left),
+        });
+      break;
+    }
     }
   }
   out.emit(spirv::opcode::function_end, {});
@@ -186,6 +237,7 @@ emit_function_module(std::span<const instruction> instructions)
     .function_type = 2U,
     .function      = 3U,
     .offset        = 3U,
+    .element       = kind_of<Element>,
   };
 
   spirv::writer out {label_id(layout, instructions) + 1U};

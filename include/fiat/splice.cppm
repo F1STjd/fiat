@@ -88,8 +88,8 @@ splice(
   }
   const std::uint32_t function = (*linkage)[ 1 ];
 
-  const auto declaration =
-    std::ranges::find_if(items, [ & ](const auto& item) -> bool {
+  const auto declaration = std::ranges::find_if(
+    items, [ & ](std::span<const std::uint32_t> item) -> bool {
       return opcode_of(item.front()) ==
                std::to_underlying(spirv::opcode::function) &&
              item[ 2 ] == function;
@@ -99,15 +99,57 @@ splice(
     splice_error("fiat_operation is not declared");
   }
 
+  const auto uint_type = std::ranges::find_if(
+    items, [](std::span<const std::uint32_t> item) -> bool {
+      return opcode_of(item.front()) ==
+               std::to_underlying(spirv::opcode::type_int) &&
+             item[ 2 ] == 32U &&
+             item[ 3 ] == 0U;
+    });
+  if (uint_type == items.end())
+  {
+    splice_error("template has no 32-bit unsigned integer type");
+  }
+
+  const auto uint_pointer = std::ranges::find_if(
+    items, [ & ](std::span<const std::uint32_t> item) -> bool {
+      return opcode_of(item.front()) ==
+               std::to_underlying(spirv::opcode::type_pointer) &&
+             item[ 2 ] ==
+               std::to_underlying(spirv::storage_class::push_constant) &&
+             item[ 3 ] == (*uint_type)[ 1 ];
+    });
+  if (uint_pointer == items.end())
+  {
+    splice_error("template has no push block uint pointer type");
+  }
+
+  const auto push_variable = std::ranges::find_if(
+    items, [](std::span<const std::uint32_t> item) -> bool {
+      return opcode_of(item.front()) ==
+               std::to_underlying(spirv::opcode::variable) &&
+             item[ 3 ] ==
+               std::to_underlying(spirv::storage_class::push_constant);
+    });
+  if (push_variable == items.end())
+  {
+    splice_error("template has no push block variable");
+  }
+
   const function_layout layout {
     .type          = (*declaration)[ 1 ],
     .function_type = (*declaration)[ 4 ],
     .function      = function,
     .offset        = skeleton[ 3 ] - 1U,
+    .element       = kind_of<Element>,
+    .uint_type     = (*uint_type)[ 1 ],
+    .uint_pointer  = (*uint_pointer)[ 1 ],
+    .push          = (*push_variable)[ 2 ],
   };
-  if (!std::ranges::any_of(items, [ & ](const auto& item) -> bool {
-        return declares_element<Element>(item, layout.type);
-      }))
+  if (!std::ranges::any_of(
+        items, [ & ](std::span<const std::uint32_t> item) -> bool {
+          return declares_element<Element>(item, layout.type);
+        }))
   {
     splice_error("template element type does not match Element");
   }
