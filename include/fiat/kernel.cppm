@@ -28,7 +28,7 @@ static_assert(
   "matches the template push block");
 static_assert(
   sizeof(transform_push) == 128UZ,
-  "fits the 12 bytes every Vulkan device guarantees");
+  "fits the 128 bytes every Vulkan device guarantees");
 
 export inline constexpr std::string_view transform_entry {"fiat_transform"};
 export inline constexpr std::uint32_t    group_size_constant_id {};
