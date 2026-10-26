@@ -10,8 +10,12 @@ import :splice;
 namespace fiat
 {
 
-export inline constexpr std::size_t argument_offset {24UZ};
 export inline constexpr std::size_t argument_capacity {26UZ};
+
+namespace detail
+{
+
+export inline constexpr std::size_t argument_offset {24UZ};
 
 export struct transform_push
 {
@@ -22,12 +26,14 @@ export struct transform_push
   std::array<std::uint32_t, argument_capacity> arguments {};
 };
 
+} // namespace detail
+
 static_assert(
-  sizeof(transform_push) ==
-    argument_offset + argument_capacity * sizeof(std::uint32_t),
+  sizeof(detail::transform_push) ==
+    detail::argument_offset + argument_capacity * sizeof(std::uint32_t),
   "matches the template push block");
 static_assert(
-  sizeof(transform_push) == 128UZ,
+  sizeof(detail::transform_push) == 128UZ,
   "fits the 128 bytes every Vulkan device guarantees");
 
 export inline constexpr std::string_view transform_entry {"fiat_transform"};
