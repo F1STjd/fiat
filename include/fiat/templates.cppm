@@ -25,6 +25,18 @@ inline constexpr auto transform_uint_bytes = std::to_array<unsigned char>({
 #embed "transform_uint.spv"
 });
 
+inline constexpr auto reduce_float_bytes = std::to_array<unsigned char>({
+#embed "reduce_float.spv"
+});
+
+inline constexpr auto reduce_int_bytes = std::to_array<unsigned char>({
+#embed "reduce_int.spv"
+});
+
+inline constexpr auto reduce_uint_bytes = std::to_array<unsigned char>({
+#embed "reduce_uint.spv"
+});
+
 #if defined(__clang__)
   #pragma clang diagnostic pop
 #endif
@@ -55,9 +67,16 @@ inline constexpr auto transform_int_words = assemble_words(transform_int_bytes);
 inline constexpr auto transform_uint_words =
   assemble_words(transform_uint_bytes);
 
+inline constexpr auto reduce_float_words = assemble_words(reduce_float_bytes);
+inline constexpr auto reduce_int_words   = assemble_words(reduce_int_bytes);
+inline constexpr auto reduce_uint_words  = assemble_words(reduce_uint_bytes);
+
 static_assert(transform_float_words.front() == spirv::magic);
 static_assert(transform_int_words.front() == spirv::magic);
 static_assert(transform_uint_words.front() == spirv::magic);
+static_assert(reduce_float_words.front() == spirv::magic);
+static_assert(reduce_int_words.front() == spirv::magic);
+static_assert(reduce_uint_words.front() == spirv::magic);
 
 template<scalar Element>
 consteval
@@ -72,6 +91,22 @@ transform_template() -> std::span<const std::uint32_t>
   else
   {
     return transform_uint_words;
+  }
+}
+
+template<scalar Element>
+consteval
+auto
+reduce_template() -> std::span<const std::uint32_t>
+{
+  if constexpr (std::same_as<Element, float>) { return reduce_float_words; }
+  else if constexpr (std::same_as<Element, std::int32_t>)
+  {
+    return reduce_int_words;
+  }
+  else
+  {
+    return reduce_uint_words;
   }
 }
 

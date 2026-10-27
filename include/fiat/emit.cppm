@@ -8,6 +8,7 @@ namespace fiat
 {
 
 export inline constexpr std::string_view operation_symbol {"fiat_operation"};
+export inline constexpr std::string_view combine_symbol {"fiat_combine"};
 
 template<class Operation>
 struct arguments_of

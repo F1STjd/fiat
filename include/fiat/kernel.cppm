@@ -26,6 +26,25 @@ export struct transform_push
   std::array<std::uint32_t, argument_capacity> arguments {};
 };
 
+export inline constexpr std::uint32_t reduce_group_limit {1'024U};
+static_assert(
+  reduce_group_limit <= 65'535U,
+  "65535 is the Vulkan minimum of maxComputeWorkGroupCount[0]");
+
+export inline constexpr std::size_t reduce_scratch_bytes {
+  8UZ + 4UZ * reduce_group_limit
+};
+static_assert(reduce_scratch_bytes == 4'104UZ, "counter + result + partials");
+
+export struct reduce_push
+{
+  std::uint64_t                                input {};
+  std::uint64_t                                scratch {};
+  std::uint32_t                                count {};
+  std::uint32_t                                identity {};
+  std::array<std::uint32_t, argument_capacity> arguments {};
+};
+
 } // namespace detail
 
 static_assert(
@@ -35,14 +54,29 @@ static_assert(
 static_assert(
   sizeof(detail::transform_push) == 128UZ,
   "fits the 128 bytes every Vulkan device guarantees");
+static_assert(
+  sizeof(detail::reduce_push) ==
+    detail::argument_offset + argument_capacity * sizeof(std::uint32_t),
+  "matches the template push block");
+static_assert(
+  sizeof(detail::reduce_push) == 128UZ,
+  "fits the 128 bytes every Vulkan device guarantees");
 
 export inline constexpr std::string_view transform_entry {"fiat_transform"};
+export inline constexpr std::string_view reduce_entry {"fiat_reduce"};
 export inline constexpr std::uint32_t    group_size_constant_id {};
 
 export template<class Operation>
 struct transform_stage
 {
   typename arguments_of<Operation>::type arguments {};
+};
+
+export template<class Operation, class Combine, class Identity>
+struct reduce_stage
+{
+  typename arguments_of<Operation>::type arguments {};
+  Identity                               identity {};
 };
 
 export template<class Operation, class... Arguments>
@@ -106,7 +140,7 @@ struct chain
   using argument_tuple = decltype(std::tuple_cat(
     std::declval<typename Operations::argument_tuple>()...));
 
-  static constexpr std::array counts {
+  static constexpr std::array<std::size_t, sizeof...(Operations)> counts {
     std::tuple_size_v<typename Operations::argument_tuple>...,
   };
 
@@ -172,6 +206,32 @@ operator |(
   -> transform_stage<chain<Left..., Right...>>
 { return fuse(left, right); }
 
+export
+template<class Combine, class Identity>
+constexpr auto
+reduce(Combine, Identity identity) -> reduce_stage<chain<>, Combine, Identity>
+{
+  static_assert(
+    std::is_empty_v<Combine>, "fiat::reduce cannot read lambda captures");
+  static_assert(
+    (scalar<Identity>),
+    "fiat::reduce identity must be float, std::int32_t or std::uint32_t");
+  static_assert(
+    std::tuple_size_v<typename arguments_of<Combine>::type> == 0UZ,
+    "fiat::reduce combine operations take no runtime arguments; fuse a "
+    "fiat::transform before the reduce instead");
+  return {.arguments = {}, .identity = identity};
+}
+
+export
+template<class... Left, class Combine, class Identity>
+constexpr auto
+operator |(
+  transform_stage<chain<Left...>>          left,
+  reduce_stage<chain<>, Combine, Identity> right)
+  -> reduce_stage<chain<Left...>, Combine, Identity>
+{ return {.arguments = left.arguments, .identity = right.identity}; }
+
 namespace detail
 {
 
@@ -204,6 +264,56 @@ compile(transform_stage<Operation>)
   const std::vector<std::uint32_t> words =
     detail::transform_module<Element, Operation>();
   std::array<std::uint32_t, transform_word_count<Element, Operation>> result {};
+  std::ranges::copy(words, result.begin());
+  return result;
+}
+
+namespace detail
+{
+
+template<scalar Element, class Operation, class Combine>
+  requires (traceable<Operation, Element> && combinable<Combine, Element>)
+constexpr
+auto
+reduce_module() -> std::vector<std::uint32_t>
+{
+  const std::vector<instruction> map_instructions = trace<Element, Operation>();
+  const std::vector<instruction> combine_instructions =
+    trace_binary<Element, Combine>();
+  return splice<Element>(
+    reduce_template<Element>(),
+    std::array {
+      symbol_trace {operation_symbol, map_instructions},
+      symbol_trace {operation_symbol, combine_instructions},
+    });
+}
+
+export template<scalar Element, class Operation, class Combine>
+  requires (traceable<Operation, Element> && combinable<Combine, Element>)
+inline constexpr std::size_t reduce_word_count =
+  reduce_module<Element, Operation, Combine>().size();
+
+} // namespace detail
+
+export
+template<scalar Element, class Operation, class Combine, class Identity>
+  requires (
+    traceable<Operation, Element> &&
+    combinable<Combine, Element> &&
+    std::same_as<Identity, Element>)
+consteval auto
+compile(reduce_stage<Operation, Combine, Identity>) -> std::array<
+  std::uint32_t,
+  detail::reduce_word_count<Element, Operation, Combine>
+>
+{
+  const std::vector<std::uint32_t> words =
+    detail::reduce_module<Element, Operation, Combine>();
+  std::array<
+    std::uint32_t,
+    detail::reduce_word_count<Element, Operation, Combine>
+  >
+    result {};
   std::ranges::copy(words, result.begin());
   return result;
 }
