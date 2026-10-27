@@ -50,6 +50,17 @@ concept traceable =
   scalar<Element> &&
   traceable_arguments<Operation, Element, typename arguments_of<Operation>::type>;
 
+export template<class Operation, class Element>
+concept combinable =
+  scalar<Element> &&
+  std::is_empty_v<Operation> &&
+  std::default_initializable<Operation> &&
+  std::invocable<Operation, value<Element>, value<Element>> &&
+  std::same_as<
+    std::invoke_result_t<Operation, value<Element>, value<Element>>,
+    value<Element>
+  >;
+
 template<
   class Operation,
   scalar Element,
@@ -104,6 +115,20 @@ trace() -> std::vector<instruction>
     std::type_identity<argument_tuple> {},
     std::make_index_sequence<std::tuple_size_v<argument_tuple>> {});
   target.emit_result(kind_of<Element>, parameter.id());
+  return std::move(target).instructions();
+}
+
+template<scalar Element, class Combine>
+  requires combinable<Combine, Element>
+constexpr
+auto
+trace_binary() -> std::vector<instruction>
+{
+  recorder             target {};
+  value<Element>       left {target, target.emit_parameter(kind_of<Element>)};
+  value<Element>       right {target, target.emit_parameter(kind_of<Element>)};
+  const value<Element> merged = Combine {}(left, right);
+  target.emit_result(kind_of<Element>, merged.id());
   return std::move(target).instructions();
 }
 
