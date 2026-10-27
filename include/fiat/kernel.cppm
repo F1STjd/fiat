@@ -181,8 +181,10 @@ constexpr
 auto
 transform_module() -> std::vector<std::uint32_t>
 {
+  const std::vector<instruction> instructions = trace<Element, Operation>();
   return splice<Element>(
-    transform_template<Element>(), trace<Element, Operation>());
+    transform_template<Element>(),
+    std::array {symbol_trace {operation_symbol, instructions}});
 }
 
 } // namespace detail

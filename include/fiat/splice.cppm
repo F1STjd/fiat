@@ -62,42 +62,25 @@ declares_element(std::span<const std::uint32_t> item, std::uint32_t type_id)
   }
 }
 
+namespace detail
+{
+
+struct symbol_trace
+{
+  std::string_view             symbol {};
+  std::span<const instruction> instructions {};
+};
+
+} // namespace detail
+
 template<scalar Element>
 constexpr
 auto
 splice(
-  std::span<const std::uint32_t> skeleton, std::span<const instruction> trace)
-  -> std::vector<std::uint32_t>
+  std::span<const std::uint32_t>        skeleton,
+  std::span<const detail::symbol_trace> traces) -> std::vector<std::uint32_t>
 {
-  const auto items  = instructions_of(skeleton);
-  const auto symbol = spirv::literal_string(operation_symbol);
-
-  const auto is_import = [ & ](std::span<const std::uint32_t> item) -> bool {
-    return opcode_of(item.front()) ==
-             std::to_underlying(spirv::opcode::decorate) &&
-           item.size() == 3UZ + symbol.size() + 1UZ &&
-           item[ 2 ] ==
-             std::to_underlying(spirv::decoration::linkage_attributes) &&
-           std::ranges::equal(item.subspan(3UZ, symbol.size()), symbol) &&
-           item.back() == std::to_underlying(spirv::linkage_type::imported);
-  };
-  const auto linkage = std::ranges::find_if(items, is_import);
-  if (linkage == items.end())
-  {
-    splice_error("template has no fiat_operation import");
-  }
-  const std::uint32_t function = (*linkage)[ 1 ];
-
-  const auto declaration = std::ranges::find_if(
-    items, [ & ](std::span<const std::uint32_t> item) -> bool {
-      return opcode_of(item.front()) ==
-               std::to_underlying(spirv::opcode::function) &&
-             item[ 2 ] == function;
-    });
-  if (declaration == items.end())
-  {
-    splice_error("fiat_operation is not declared");
-  }
+  const auto items = instructions_of(skeleton);
 
   const auto uint_type = std::ranges::find_if(
     items, [](std::span<const std::uint32_t> item) -> bool {
@@ -136,25 +119,80 @@ splice(
     splice_error("template has no push block variable");
   }
 
-  const function_layout layout {
-    .type          = (*declaration)[ 1 ],
-    .function_type = (*declaration)[ 4 ],
-    .function      = function,
-    .offset        = skeleton[ 3 ] - 1U,
-    .element       = kind_of<Element>,
-    .uint_type     = (*uint_type)[ 1 ],
-    .uint_pointer  = (*uint_pointer)[ 1 ],
-    .push          = (*push_variable)[ 2 ],
+  const auto layout_of =
+    [ & ](const detail::symbol_trace& entry, std::uint32_t first_offset)
+    -> function_layout {
+    const auto symbol = spirv::literal_string(entry.symbol);
+
+    const auto is_import = [ & ](std::span<const std::uint32_t> item) -> bool {
+      return opcode_of(item.front()) ==
+               std::to_underlying(spirv::opcode::decorate) &&
+             item.size() == 3UZ + symbol.size() + 1UZ &&
+             item[ 2 ] ==
+               std::to_underlying(spirv::decoration::linkage_attributes) &&
+             std::ranges::equal(item.subspan(3UZ, symbol.size()), symbol) &&
+             item.back() == std::to_underlying(spirv::linkage_type::imported);
+    };
+
+    const auto linkage = std::ranges::find_if(items, is_import);
+    if (linkage == items.end())
+    {
+      splice_error("template has no import for a traced symbol");
+    }
+    const std::uint32_t function = (*linkage)[ 1 ];
+
+    const auto declaration = std::ranges::find_if(
+      items, [ & ](std::span<const std::uint32_t> item) -> bool {
+        return opcode_of(item.front()) ==
+                 std::to_underlying(spirv::opcode::function) &&
+               item[ 2 ] == function;
+      });
+    if (declaration == items.end())
+    {
+      splice_error("a traced symbol is not declared");
+    }
+
+    const auto declared = std::ranges::distance(
+      std::ranges::subrange {std::next(declaration), items.end()} |
+      std::views::take_while([](std::span<const std::uint32_t> item) -> bool {
+        return opcode_of(item.front()) ==
+               std::to_underlying(spirv::opcode::function_parameter);
+      }));
+    const auto traced = std::ranges::count(
+      entry.instructions, operation::parameter, &instruction::code);
+    if (declared != traced)
+    {
+      splice_error("declared parameter cound differs from the trace");
+    }
+
+    return {
+      .type          = (*declaration)[ 1 ],
+      .function_type = (*declaration)[ 4 ],
+      .function      = function,
+      .offset        = first_offset,
+      .element       = kind_of<Element>,
+      .uint_type     = (*uint_type)[ 1 ],
+      .uint_pointer  = (*uint_pointer)[ 1 ],
+      .push          = (*push_variable)[ 2 ],
+    };
   };
+
+  std::vector<function_layout> layouts {};
+  std::uint32_t                offset = skeleton[ 3 ] - 1U;
+  for (const auto& entry : traces)
+  {
+    layouts.push_back(layout_of(entry, offset));
+    offset = label_id(layouts.back(), entry.instructions);
+  }
   if (!std::ranges::any_of(
         items, [ & ](std::span<const std::uint32_t> item) -> bool {
-          return declares_element<Element>(item, layout.type);
+          return declares_element<Element>(item, layouts.front().type);
         }))
   {
     splice_error("template element type does not match Element");
   }
 
-  spirv::writer out {label_id(layout, trace) + 1U};
+  spirv::writer out {offset + 1U};
   bool          constants_written {false};
   bool          skipping {false};
   for (const auto& item : items)
@@ -181,15 +219,21 @@ splice(
     {
       if (!constants_written)
       {
-        emit_constants(out, layout, trace);
+        for (const auto& [ layout, entry ] : std::views::zip(layouts, traces))
+        {
+          emit_constants(out, layout, entry.instructions);
+        }
         constants_written = true;
       }
-      if (item[ 2 ] == function)
+      for (const auto& [ layout, entry ] : std::views::zip(layouts, traces))
       {
-        emit_definition(out, layout, trace);
-        skipping = true;
-        continue;
+        if (item[ 2 ] == layout.function)
+        {
+          emit_definition(out, layout, entry.instructions);
+          skipping = true;
+        }
       }
+      if (skipping) { continue; }
     }
     out.append(item);
   }
