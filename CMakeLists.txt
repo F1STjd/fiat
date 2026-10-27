@@ -41,6 +41,17 @@ foreach(ELEMENT IN ITEMS float int uint)
     DEPENDS "${source}"
     VERBATIM)
   list(APPEND FIAT_TEMPLATE_OUTPUTS "${binary}")
+
+  set(reduce_source "${FIAT_TEMPLATE_DIR}/reduce_${ELEMENT}.spvasm")
+  set(reduce_binary "${FIAT_TEMPLATE_DIR}/reduce_${ELEMENT}.spv")
+  configure_file(templates/reduce.spvasm.in "${reduce_source}" @ONLY)
+  add_custom_command(
+    OUTPUT "${reduce_binary}"
+    COMMAND "${FIAT_SPIRV_AS}" --target-env spv1.6 -o "${reduce_binary}" "${reduce_source}"
+    COMMAND "${FIAT_SPIRV_VAL}" --target-env spv1.6 "${reduce_binary}"
+    DEPENDS "${reduce_source}"
+    VERBATIM)
+  list(APPEND FIAT_TEMPLATE_OUTPUTS "${reduce_binary}")
 endforeach()
 add_custom_target(fiat_templates DEPENDS ${FIAT_TEMPLATE_OUTPUTS})
 add_dependencies(fiat fiat_templates)

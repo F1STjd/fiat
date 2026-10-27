@@ -1,0 +1,213 @@
+; fiat reduce template (N4A). @ELEMENT@ = float | int | uint (CMake configure_file).
+; Assembled with spirv-as --target-env spv1.6, validated with spirv-val --target-env spv1.6.
+; The splicer replaces the Import declarations of %fiat_operation (map, T -> T) and
+; %fiat_combine (T, T -> T) with the traced definitions, and removes OpCapability Linkage
+; plus the LinkageAttributes decorations.
+; Single dispatch, last-workgroup pattern: every workgroup writes one partial, takes a ticket
+; from an atomic counter (Device scope, AcquireRelease), and the workgroup with the last
+; ticket combines the partials, writes the result and resets the counter to zero.
+; Combine must be associative and commutative; identity is applied once per invocation.
+               OpCapability Shader
+               OpCapability PhysicalStorageBufferAddresses
+               OpCapability VulkanMemoryModel
+               OpCapability VulkanMemoryModelDeviceScope
+               OpCapability Linkage
+               OpMemoryModel PhysicalStorageBuffer64 Vulkan
+               OpEntryPoint GLCompute %main "fiat_reduce" %local_id %group_id %group_count %push %shared_values %shared_flag
+               OpExecutionModeId %main LocalSizeId %group_size %one %one
+               OpDecorate %fiat_operation LinkageAttributes "fiat_operation" Import
+               OpDecorate %fiat_combine LinkageAttributes "fiat_combine" Import
+               OpDecorate %local_id BuiltIn LocalInvocationId
+               OpDecorate %group_id BuiltIn WorkgroupId
+               OpDecorate %group_count BuiltIn NumWorkgroups
+               OpDecorate %group_size SpecId 0
+               OpDecorate %element_pointer ArrayStride 4
+               OpDecorate %argument_array ArrayStride 4
+               OpDecorate %partials_array ArrayStride 4
+               OpDecorate %scratch_type Block
+               OpMemberDecorate %scratch_type 0 Offset 0
+               OpMemberDecorate %scratch_type 1 Offset 4
+               OpMemberDecorate %scratch_type 2 Offset 8
+               OpDecorate %push_type Block
+               OpMemberDecorate %push_type 0 Offset 0
+               OpMemberDecorate %push_type 1 Offset 8
+               OpMemberDecorate %push_type 2 Offset 16
+               OpMemberDecorate %push_type 3 Offset 20
+               OpMemberDecorate %push_type 4 Offset 24
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+      %float = OpTypeFloat 32
+        %int = OpTypeInt 32 1
+       %uint = OpTypeInt 32 0
+%argument_count = OpConstant %uint 26
+%argument_array = OpTypeArray %uint %argument_count
+     %uint_3 = OpTypeVector %uint 3
+%element_pointer = OpTypePointer PhysicalStorageBuffer %@ELEMENT@
+%partials_array = OpTypeRuntimeArray %@ELEMENT@
+%scratch_type = OpTypeStruct %uint %@ELEMENT@ %partials_array
+%scratch_pointer = OpTypePointer PhysicalStorageBuffer %scratch_type
+%scratch_uint_pointer = OpTypePointer PhysicalStorageBuffer %uint
+%scratch_element_pointer = OpTypePointer PhysicalStorageBuffer %@ELEMENT@
+  %push_type = OpTypeStruct %element_pointer %scratch_pointer %uint %uint %argument_array
+%push_pointer = OpTypePointer PushConstant %push_type
+%push_uint_pointer = OpTypePointer PushConstant %uint
+%push_element_pointer = OpTypePointer PushConstant %element_pointer
+%push_scratch_pointer = OpTypePointer PushConstant %scratch_pointer
+%input_uint_3_pointer = OpTypePointer Input %uint_3
+%input_uint_pointer = OpTypePointer Input %uint
+%main_type = OpTypeFunction %void
+%operation_type = OpTypeFunction %@ELEMENT@ %@ELEMENT@
+%combine_type = OpTypeFunction %@ELEMENT@ %@ELEMENT@ %@ELEMENT@
+       %zero = OpConstant %uint 0
+        %one = OpConstant %uint 1
+        %two = OpConstant %uint 2
+      %three = OpConstant %uint 3
+     %device = OpConstant %uint 1
+  %workgroup = OpConstant %uint 2
+%semantics_workgroup = OpConstant %uint 264
+%semantics_device = OpConstant %uint 72
+%semantics_release = OpConstant %uint 68
+ %group_size = OpSpecConstant %uint 256
+%shared_array = OpTypeArray %@ELEMENT@ %group_size
+%shared_array_pointer = OpTypePointer Workgroup %shared_array
+%shared_element_pointer = OpTypePointer Workgroup %@ELEMENT@
+%shared_uint_pointer = OpTypePointer Workgroup %uint
+   %local_id = OpVariable %input_uint_3_pointer Input
+   %group_id = OpVariable %input_uint_3_pointer Input
+%group_count = OpVariable %input_uint_3_pointer Input
+       %push = OpVariable %push_pointer PushConstant
+%shared_values = OpVariable %shared_array_pointer Workgroup
+%shared_flag = OpVariable %shared_uint_pointer Workgroup
+%fiat_operation = OpFunction %@ELEMENT@ None %operation_type
+%operation_parameter = OpFunctionParameter %@ELEMENT@
+               OpFunctionEnd
+%fiat_combine = OpFunction %@ELEMENT@ None %combine_type
+%combine_left = OpFunctionParameter %@ELEMENT@
+%combine_right = OpFunctionParameter %@ELEMENT@
+               OpFunctionEnd
+       %tree = OpFunction %@ELEMENT@ None %operation_type
+ %tree_value = OpFunctionParameter %@ELEMENT@
+ %tree_entry = OpLabel
+%tree_local_pointer = OpAccessChain %input_uint_pointer %local_id %zero
+ %tree_local = OpLoad %uint %tree_local_pointer
+  %tree_slot = OpAccessChain %shared_element_pointer %shared_values %tree_local
+               OpControlBarrier %workgroup %workgroup %semantics_workgroup
+               OpStore %tree_slot %tree_value NonPrivatePointer
+               OpControlBarrier %workgroup %workgroup %semantics_workgroup
+ %tree_start = OpShiftRightLogical %uint %group_size %one
+               OpBranch %tree_header
+%tree_header = OpLabel
+%tree_stride = OpPhi %uint %tree_start %tree_entry %tree_next %tree_continue
+  %tree_more = OpUGreaterThan %bool %tree_stride %zero
+               OpLoopMerge %tree_exit %tree_continue None
+               OpBranchConditional %tree_more %tree_body %tree_exit
+  %tree_body = OpLabel
+%tree_active = OpULessThan %bool %tree_local %tree_stride
+               OpSelectionMerge %tree_join None
+               OpBranchConditional %tree_active %tree_combine %tree_join
+%tree_combine = OpLabel
+%tree_peer_index = OpIAdd %uint %tree_local %tree_stride
+%tree_peer_slot = OpAccessChain %shared_element_pointer %shared_values %tree_peer_index
+ %tree_left = OpLoad %@ELEMENT@ %tree_slot NonPrivatePointer
+%tree_right = OpLoad %@ELEMENT@ %tree_peer_slot NonPrivatePointer
+%tree_merged = OpFunctionCall %@ELEMENT@ %fiat_combine %tree_left %tree_right
+               OpStore %tree_slot %tree_merged NonPrivatePointer
+               OpBranch %tree_join
+  %tree_join = OpLabel
+               OpBranch %tree_continue
+%tree_continue = OpLabel
+               OpControlBarrier %workgroup %workgroup %semantics_workgroup
+  %tree_next = OpShiftRightLogical %uint %tree_stride %one
+               OpBranch %tree_header
+  %tree_exit = OpLabel
+%tree_first_slot = OpAccessChain %shared_element_pointer %shared_values %zero
+%tree_first = OpLoad %@ELEMENT@ %tree_first_slot NonPrivatePointer
+               OpReturnValue %tree_first
+               OpFunctionEnd
+       %main = OpFunction %void None %main_type
+      %entry = OpLabel
+%local_pointer = OpAccessChain %input_uint_pointer %local_id %zero
+      %local = OpLoad %uint %local_pointer
+%group_pointer = OpAccessChain %input_uint_pointer %group_id %zero
+      %group = OpLoad %uint %group_pointer
+%groups_pointer = OpAccessChain %input_uint_pointer %group_count %zero
+     %groups = OpLoad %uint %groups_pointer
+%input_member = OpAccessChain %push_element_pointer %push %zero
+      %input = OpLoad %element_pointer %input_member
+%scratch_member = OpAccessChain %push_scratch_pointer %push %one
+    %scratch = OpLoad %scratch_pointer %scratch_member
+%counter_pointer = OpAccessChain %scratch_uint_pointer %scratch %zero
+%count_member = OpAccessChain %push_uint_pointer %push %two
+      %count = OpLoad %uint %count_member
+%identity_member = OpAccessChain %push_uint_pointer %push %three
+%identity_bits = OpLoad %uint %identity_member
+   %identity = OpBitcast %@ELEMENT@ %identity_bits
+%group_offset = OpIMul %uint %group %group_size
+      %start = OpIAdd %uint %group_offset %local
+     %stride = OpIMul %uint %groups %group_size
+               OpBranch %scan_header
+%scan_header = OpLabel
+      %index = OpPhi %uint %start %entry %index_next %scan_continue
+%accumulator = OpPhi %@ELEMENT@ %identity %entry %accumulator_next %scan_continue
+  %scan_more = OpULessThan %bool %index %count
+               OpLoopMerge %scan_exit %scan_continue None
+               OpBranchConditional %scan_more %scan_body %scan_exit
+  %scan_body = OpLabel
+ %item_pointer = OpPtrAccessChain %element_pointer %input %index
+       %item = OpLoad %@ELEMENT@ %item_pointer Aligned 4
+     %mapped = OpFunctionCall %@ELEMENT@ %fiat_operation %item
+%accumulator_next = OpFunctionCall %@ELEMENT@ %fiat_combine %accumulator %mapped
+               OpBranch %scan_continue
+%scan_continue = OpLabel
+ %index_next = OpIAdd %uint %index %stride
+               OpBranch %scan_header
+  %scan_exit = OpLabel
+%group_value = OpFunctionCall %@ELEMENT@ %tree %accumulator
+   %is_first = OpIEqual %bool %local %zero
+               OpSelectionMerge %publish_done None
+               OpBranchConditional %is_first %publish %publish_done
+    %publish = OpLabel
+%partial_slot = OpAccessChain %scratch_element_pointer %scratch %two %group
+               OpStore %partial_slot %group_value Aligned|NonPrivatePointer|MakePointerAvailable 4 %device
+     %ticket = OpAtomicIAdd %uint %counter_pointer %device %semantics_device %one
+ %last_ticket = OpISub %uint %groups %one
+%ticket_last = OpIEqual %bool %ticket %last_ticket
+%flag_value = OpSelect %uint %ticket_last %one %zero
+               OpStore %shared_flag %flag_value NonPrivatePointer
+               OpBranch %publish_done
+%publish_done = OpLabel
+               OpControlBarrier %workgroup %workgroup %semantics_workgroup
+       %flag = OpLoad %uint %shared_flag NonPrivatePointer
+    %is_last = OpINotEqual %bool %flag %zero
+               OpSelectionMerge %finish_done None
+               OpBranchConditional %is_last %finish %finish_done
+     %finish = OpLabel
+               OpBranch %gather_header
+%gather_header = OpLabel
+%gather_index = OpPhi %uint %local %finish %gather_next %gather_continue
+%gather_accumulator = OpPhi %@ELEMENT@ %identity %finish %gather_accumulator_next %gather_continue
+%gather_more = OpULessThan %bool %gather_index %groups
+               OpLoopMerge %gather_exit %gather_continue None
+               OpBranchConditional %gather_more %gather_body %gather_exit
+%gather_body = OpLabel
+%gather_slot = OpAccessChain %scratch_element_pointer %scratch %two %gather_index
+%gather_item = OpLoad %@ELEMENT@ %gather_slot Aligned|NonPrivatePointer|MakePointerVisible 4 %device
+%gather_accumulator_next = OpFunctionCall %@ELEMENT@ %fiat_combine %gather_accumulator %gather_item
+               OpBranch %gather_continue
+%gather_continue = OpLabel
+%gather_next = OpIAdd %uint %gather_index %group_size
+               OpBranch %gather_header
+%gather_exit = OpLabel
+      %total = OpFunctionCall %@ELEMENT@ %tree %gather_accumulator
+               OpSelectionMerge %write_done None
+               OpBranchConditional %is_first %write %write_done
+      %write = OpLabel
+%result_pointer = OpAccessChain %scratch_element_pointer %scratch %one
+               OpStore %result_pointer %total Aligned|NonPrivatePointer 4
+               OpAtomicStore %counter_pointer %device %semantics_release %zero
+               OpBranch %write_done
+ %write_done = OpLabel
+               OpBranch %finish_done
+%finish_done = OpLabel
+               OpReturn
+               OpFunctionEnd
