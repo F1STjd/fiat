@@ -172,11 +172,25 @@ operator |(
   -> transform_stage<chain<Left..., Right...>>
 { return fuse(left, right); }
 
+namespace detail
+{
+
+template<scalar Element, class Operation>
+  requires traceable<Operation, Element>
+constexpr
+auto
+transform_module() -> std::vector<std::uint32_t>
+{
+  return splice<Element>(
+    transform_template<Element>(), trace<Element, Operation>());
+}
+
+} // namespace detail
+
 export template<scalar Element, class Operation>
   requires traceable<Operation, Element>
 inline constexpr std::size_t transform_word_count =
-  splice<Element>(transform_template<Element>(), trace<Element, Operation>())
-    .size();
+  detail::transform_module<Element, Operation>().size();
 
 export
 template<scalar Element, class Operation>
@@ -186,7 +200,7 @@ compile(transform_stage<Operation>)
   -> std::array<std::uint32_t, transform_word_count<Element, Operation>>
 {
   const std::vector<std::uint32_t> words =
-    splice<Element>(transform_template<Element>(), trace<Element, Operation>());
+    detail::transform_module<Element, Operation>();
   std::array<std::uint32_t, transform_word_count<Element, Operation>> result {};
   std::ranges::copy(words, result.begin());
   return result;

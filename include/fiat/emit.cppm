@@ -59,8 +59,8 @@ template<
 constexpr
 void
 trace_call(
-  [[maybe_unused]] recorder& target,
-  value<Element>&            parameter,
+  [[maybe_unused]] detail::recorder& target,
+  value<Element>&                    parameter,
   std::type_identity<std::tuple<Arguments...>>,
   std::index_sequence<Slots...>)
 {
@@ -85,10 +85,13 @@ trace_call(
   }
 }
 
-export
+namespace detail
+{
+
 template<scalar Element, class Operation>
   requires traceable<Operation, Element>
-constexpr auto
+constexpr
+auto
 trace() -> std::vector<instruction>
 {
   using argument_tuple = typename arguments_of<Operation>::type;
@@ -103,6 +106,8 @@ trace() -> std::vector<instruction>
   target.emit_result(kind_of<Element>, parameter.id());
   return std::move(target).instructions();
 }
+
+} // namespace detail
 
 constexpr
 auto
@@ -289,9 +294,12 @@ emit_definition(
   out.emit(spirv::opcode::function_end, {});
 }
 
-export
+namespace detail
+{
+
 template<scalar Element>
-constexpr auto
+constexpr
+auto
 emit_function_module(std::span<const instruction> instructions)
   -> std::vector<std::uint32_t>
 {
@@ -347,11 +355,14 @@ emit_function_module(std::span<const instruction> instructions)
   return std::move(out).words();
 }
 
+} // namespace detail
+
 export template<scalar Element, class Operation>
   requires (traceable<Operation, Element> &&
              std::tuple_size_v<typename arguments_of<Operation>::type> == 0UZ)
 inline constexpr std::size_t word_count =
-  emit_function_module<Element>(trace<Element, Operation>()).size();
+  detail::emit_function_module<Element>(detail::trace<Element, Operation>())
+    .size();
 
 export
 template<scalar Element, class Operation>
@@ -362,7 +373,7 @@ consteval auto
 compile(Operation) -> std::array<std::uint32_t, word_count<Element, Operation>>
 {
   const std::vector<std::uint32_t> words =
-    emit_function_module<Element>(trace<Element, Operation>());
+    detail::emit_function_module<Element>(detail::trace<Element, Operation>());
   std::array<std::uint32_t, word_count<Element, Operation>> result {};
   std::ranges::copy(words, result.begin());
   return result;

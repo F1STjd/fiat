@@ -52,7 +52,10 @@ export struct instruction
   std::uint32_t literal {};
 };
 
-export class recorder
+namespace detail
+{
+
+class recorder
 {
 public:
   constexpr
@@ -147,6 +150,8 @@ private:
   std::uint32_t            next_id_ {1U};
 };
 
+} // namespace detail
+
 export template<scalar Type>
 class value;
 
@@ -169,7 +174,7 @@ export template<scalar Type>
 class value
 {
 public:
-  constexpr value(recorder& owner, std::uint32_t result)
+  constexpr value(detail::recorder& owner, std::uint32_t result)
   : recorder_ {owner}, id_ {result}
   {}
 
@@ -192,7 +197,7 @@ public:
   [[nodiscard]]
   constexpr
   auto
-  target() const noexcept -> recorder&
+  target() const noexcept -> detail::recorder&
   { return recorder_; }
 
   explicit
@@ -236,8 +241,8 @@ public:
   }
 
 private:
-  recorder&     recorder_;
-  std::uint32_t id_;
+  detail::recorder& recorder_;
+  std::uint32_t     id_;
 };
 
 inline
@@ -301,7 +306,7 @@ to_scalar(Literal literal) -> Type
 template<class Type, class Operand>
 constexpr
 auto
-operand_id(recorder& target, const Operand& operand) -> std::uint32_t
+operand_id(detail::recorder& target, const Operand& operand) -> std::uint32_t
 {
   if constexpr (std::same_as<Operand, value<Type>>) { return operand.id(); }
   else
@@ -316,7 +321,7 @@ constexpr
 auto
 combine(operation code, const Left& left, const Right& right) -> value<Type>
 {
-  recorder& target = [ & ] -> recorder& {
+  detail::recorder& target = [ & ] -> detail::recorder& {
     if constexpr (std::same_as<Left, value<Type>>) { return left.target(); }
     else
     {
@@ -385,7 +390,7 @@ template<scalar Type>
 constexpr auto
 operator -(const value<Type>& operand) -> value<Type>
 {
-  recorder& target = operand.target();
+  detail::recorder& target = operand.target();
   return value<Type> {
     target,
     target.emit_unary(operation::negate, kind_of<Type>, operand.id()),
