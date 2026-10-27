@@ -240,11 +240,57 @@ private:
   std::uint32_t id_;
 };
 
+inline
+void
+literal_out_of_range([[maybe_unused]] std::string_view reason)
+{}
+
+template<std::integral Literal>
+constexpr
+auto
+exact_in_float(Literal literal) -> bool
+{
+  const auto magnitude = [ & ] -> std::uint64_t {
+    if constexpr (std::signed_integral<Literal>)
+    {
+      if (literal < 0)
+      {
+        return std::uint64_t {} - static_cast<std::uint64_t>(literal);
+      }
+    }
+    return static_cast<std::uint64_t>(literal);
+  }();
+  return magnitude == 0U ||
+         std::bit_width(magnitude) - std::countr_zero(magnitude) <=
+           std::numeric_limits<float>::digits;
+}
+
 template<class Type, class Literal>
 constexpr
 auto
 to_scalar(Literal literal) -> Type
 {
+  if constexpr (std::unsigned_integral<Type> && std::signed_integral<Literal>)
+  {
+    if (literal < 0)
+    {
+      literal_out_of_range("negative literal for unsigned fiat value");
+    }
+  }
+  if constexpr (std::integral<Type> && std::integral<Literal>)
+  {
+    if (!std::in_range<Type>(+literal))
+    {
+      literal_out_of_range("literal does not fit the element_type");
+    }
+  }
+  if constexpr (std::same_as<Type, float> && std::integral<Literal>)
+  {
+    if (!exact_in_float(literal))
+    {
+      literal_out_of_range("integer literal loses precision as float");
+    }
+  }
   if constexpr (std::same_as<Type, Literal>) { return literal; }
   else
   {
