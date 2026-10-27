@@ -212,12 +212,18 @@ emit_definition(
       std::to_underlying(spirv::function_control::inlined),
       layout.function_type,
     });
-  out.emit(
-    spirv::opcode::function_parameter,
-    {layout.type, module_id(layout, instructions.front().result)});
+  const auto is_parameter = [](const instruction& item) -> bool {
+    return item.code == operation::parameter;
+  };
+  for (const auto& item : instructions | std::views::take_while(is_parameter))
+  {
+    out.emit(
+      spirv::opcode::function_parameter,
+      {layout.type, module_id(layout, item.result)});
+  }
   out.emit(spirv::opcode::label, {label_id(layout, instructions)});
 
-  for (const instruction& item : instructions)
+  for (const auto& item : instructions)
   {
     switch (item.code)
     {
