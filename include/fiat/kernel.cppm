@@ -283,8 +283,14 @@ reduce_module() -> std::vector<std::uint32_t>
   return splice<Element>(
     reduce_template<Element>(),
     std::array {
-      symbol_trace {operation_symbol, map_instructions},
-      symbol_trace {operation_symbol, combine_instructions},
+      symbol_trace {
+        .symbol       = operation_symbol,
+        .instructions = map_instructions,
+      },
+      symbol_trace {
+        .symbol       = combine_symbol,
+        .instructions = combine_instructions,
+      },
     });
 }
 

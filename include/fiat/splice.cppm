@@ -162,7 +162,7 @@ splice(
       entry.instructions, operation::parameter, &instruction::code);
     if (declared != traced)
     {
-      splice_error("declared parameter cound differs from the trace");
+      splice_error("declared parameter count differs from the trace");
     }
 
     return {
