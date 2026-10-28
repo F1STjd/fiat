@@ -1,4 +1,4 @@
-foreach(example IN ITEMS multiply increment transform scale)
+foreach(example IN ITEMS multiply increment transform scale reduce)
   add_executable(fiat_${example} ${example}.cpp)
   target_link_libraries(fiat_${example} PRIVATE fiat::fiat)
   set_target_properties(fiat_${example} PROPERTIES CXX_MODULE_STD ON)
