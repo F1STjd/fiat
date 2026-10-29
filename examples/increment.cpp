@@ -7,4 +7,9 @@ constexpr auto words = fiat::compile<std::uint32_t>([](auto& value) {
 
 auto
 main() -> int
-{ return fiat::write_spirv("increment.spv", words) ? 0 : 1; }
+{
+  return fiat::write_spirv(
+           std::filesystem::path {FIAT_SPV_OUTPUT_DIR} / "increment.spv", words)
+           ? 0
+           : 1;
+}

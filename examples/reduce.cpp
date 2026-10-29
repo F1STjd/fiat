@@ -14,11 +14,12 @@ constexpr auto fused_words =
 auto
 main() -> int
 {
+  const auto output = std::filesystem::path {FIAT_SPV_OUTPUT_DIR};
   const bool written =
-    fiat::write_spirv("reduce_float.spv", float_words) &&
-    fiat::write_spirv("reduce_int.spv", int_words) &&
-    fiat::write_spirv("reduce_uint.spv", uint_words) &&
-    fiat::write_spirv("reduce_fused.spv", fused_words);
+    fiat::write_spirv(output / "reduce_float.spv", float_words) &&
+    fiat::write_spirv(output / "reduce_int.spv", int_words) &&
+    fiat::write_spirv(output / "reduce_uint.spv", uint_words) &&
+    fiat::write_spirv(output / "reduce_fused.spv", fused_words);
 
   return written ? 0 : 1;
 }

@@ -7,4 +7,9 @@ constexpr auto words = fiat::compile<float>(fiat::transform(scale, float {}));
 
 auto
 main() -> int
-{ return fiat::write_spirv("scale.spv", words) ? 0 : 1; }
+{
+  return fiat::write_spirv(
+           std::filesystem::path {FIAT_SPV_OUTPUT_DIR} / "scale.spv", words)
+           ? 0
+           : 1;
+}

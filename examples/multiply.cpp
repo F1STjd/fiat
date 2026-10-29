@@ -7,4 +7,9 @@ constexpr auto words = fiat::compile<float>([](auto& value) {
 
 auto
 main() -> int
-{ return fiat::write_spirv("multiply.spv", words) ? 0 : 1; }
+{
+  return fiat::write_spirv(
+           std::filesystem::path {FIAT_SPV_OUTPUT_DIR} / "multiply.spv", words)
+           ? 0
+           : 1;
+}
