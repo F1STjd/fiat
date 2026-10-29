@@ -294,12 +294,12 @@ reduce_module() -> std::vector<std::uint32_t>
     });
 }
 
+} // namespace detail
+
 export template<scalar Element, class Operation, class Combine>
   requires (traceable<Operation, Element> && combinable<Combine, Element>)
 inline constexpr std::size_t reduce_word_count =
-  reduce_module<Element, Operation, Combine>().size();
-
-} // namespace detail
+  detail::reduce_module<Element, Operation, Combine>().size();
 
 export
 template<scalar Element, class Operation, class Combine, class Identity>
@@ -308,17 +308,12 @@ template<scalar Element, class Operation, class Combine, class Identity>
     combinable<Combine, Element> &&
     std::same_as<Identity, Element>)
 consteval auto
-compile(reduce_stage<Operation, Combine, Identity>) -> std::array<
-  std::uint32_t,
-  detail::reduce_word_count<Element, Operation, Combine>
->
+compile(reduce_stage<Operation, Combine, Identity>)
+  -> std::array<std::uint32_t, reduce_word_count<Element, Operation, Combine>>
 {
   const std::vector<std::uint32_t> words =
     detail::reduce_module<Element, Operation, Combine>();
-  std::array<
-    std::uint32_t,
-    detail::reduce_word_count<Element, Operation, Combine>
-  >
+  std::array<std::uint32_t, reduce_word_count<Element, Operation, Combine>>
     result {};
   std::ranges::copy(words, result.begin());
   return result;
