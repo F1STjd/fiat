@@ -4,6 +4,7 @@
 ; definition and removes OpCapability Linkage plus the LinkageAttributes decoration.
                OpCapability Shader
                OpCapability PhysicalStorageBufferAddresses
+               OpCapability Int64
                OpCapability Linkage
                OpMemoryModel PhysicalStorageBuffer64 GLSL450
                OpEntryPoint GLCompute %main "fiat_transform" %global_id %push
@@ -24,6 +25,7 @@
       %float = OpTypeFloat 32
         %int = OpTypeInt 32 1
        %uint = OpTypeInt 32 0
+ %ulong = OpTypeInt 64 0
 %argument_count = OpConstant %uint 26
 %argument_array = OpTypeArray %uint %argument_count
      %uint_3 = OpTypeVector %uint 3

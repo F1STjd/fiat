@@ -51,6 +51,61 @@ concept traceable =
   scalar<Element> &&
   traceable_arguments<Operation, Element, typename arguments_of<Operation>::type>;
 
+export template<class Operation, class Element, class Uniform, class... Arguments>
+concept uniform_traceable_call =
+  scalar<Element> &&
+  scalar<Uniform> &&
+  std::same_as<Uniform, Element> &&
+  std::is_empty_v<Operation> &&
+  std::default_initializable<Operation> &&
+  (std::same_as<Arguments, Element> && ...) &&
+  std::invocable<
+    Operation,
+    value<Element>&,
+    const value<Uniform>&,
+    const value<Arguments>&...
+  > &&
+  (std::same_as<
+     std::invoke_result_t<
+       Operation,
+       value<Element>&,
+       const value<Uniform>&,
+       const value<Arguments>&...
+     >,
+     value<Element>
+   > ||
+    std::is_void_v<std::invoke_result_t<
+      Operation,
+      value<Element>&,
+      const value<Uniform>&,
+      const value<Arguments>&...
+    >>);
+
+template<class Operation, class Element, class Uniform, class Arguments>
+inline constexpr bool uniform_traceable_arguments {false};
+
+template<class Operation, class Element, class Uniform, class... Arguments>
+inline constexpr bool uniform_traceable_arguments<
+  Operation,
+  Element,
+  Uniform,
+  std::tuple<Arguments...>
+> = uniform_traceable_call<Operation, Element, Uniform, Arguments...>;
+
+export template<class Operation, class Element, class Uniform>
+concept uniform_traceable =
+  scalar<Element> &&
+  scalar<Uniform> &&
+  std::same_as<Uniform, Element> &&
+  requires { typename Operation::uniform_type; } &&
+  std::same_as<typename Operation::uniform_type, Uniform> &&
+  uniform_traceable_arguments<
+    Operation,
+    Element,
+    Uniform,
+    typename arguments_of<Operation>::type
+  >;
+
 export template<class Operation, class Element>
 concept combinable =
   scalar<Element> &&
@@ -97,6 +152,47 @@ trace_call(
   }
 }
 
+template<
+  class Operation,
+  scalar Element,
+  scalar Uniform,
+  class... Arguments,
+  std::size_t... Slots
+>
+constexpr
+void
+trace_uniform_call(
+  [[maybe_unused]] detail::recorder& target,
+  value<Element>&                    parameter,
+  const value<Uniform>&              uniform,
+  [[maybe_unused]] std::type_identity<std::tuple<Arguments...>>,
+  std::index_sequence<Slots...>)
+{
+  [[maybe_unused]]
+  const std::tuple<value<Arguments>...> arguments {
+    value<Arguments> {
+      target,
+      target.emit_argument(
+        kind_of<Arguments>, static_cast<std::uint32_t>(Slots + 2U)),
+    }...,
+  };
+
+  if constexpr (
+    std::is_void_v<std::invoke_result_t<
+      Operation,
+      value<Element>&,
+      const value<Uniform>&,
+      const value<Arguments>&...
+    >>)
+  {
+    Operation {}(parameter, uniform, std::get<Slots>(arguments)...);
+  }
+  else
+  {
+    parameter = Operation {}(parameter, uniform, std::get<Slots>(arguments)...);
+  }
+}
+
 namespace detail
 {
 
@@ -133,6 +229,27 @@ trace_binary() -> std::vector<instruction>
   return std::move(target).instructions();
 }
 
+template<scalar Element, scalar Uniform, class Operation>
+  requires uniform_traceable<Operation, Element, Uniform>
+constexpr
+auto
+trace_with_uniform() -> std::vector<instruction>
+{
+  using argument_tuple = typename arguments_of<Operation>::type;
+
+  recorder       target {};
+  value<Element> parameter {target, target.emit_parameter(kind_of<Element>)};
+  value<Uniform> uniform {target, target.emit_uniform(kind_of<Uniform>, 0U)};
+  trace_uniform_call<Operation>(
+    target,
+    parameter,
+    uniform,
+    std::type_identity<argument_tuple> {},
+    std::make_index_sequence<std::tuple_size_v<argument_tuple>> {});
+  target.emit_result(kind_of<Element>, parameter.id());
+  return std::move(target).instructions();
+}
+
 } // namespace detail
 
 constexpr
@@ -160,7 +277,8 @@ opcode_for(operation code, scalar_kind kind) -> spirv::opcode
   case operation::result           :
   case operation::argument_address :
   case operation::argument_load    :
-  case operation::argument_cast    : break;
+  case operation::argument_cast    :
+  case operation::uniform_load     : break;
   }
   std::unreachable();
 }
@@ -175,6 +293,8 @@ struct function_layout
   std::uint32_t uint_type {};
   std::uint32_t uint_pointer {};
   std::uint32_t push {};
+  std::uint32_t element_pointer {};
+  std::uint32_t ulong_type {};
 };
 
 constexpr
@@ -318,6 +438,53 @@ emit_definition(
           layout.type,
           module_id(layout, item.result),
           module_id(layout, item.left),
+        });
+      break;
+    }
+    case operation::uniform_load :
+    {
+      const auto lo      = module_id(layout, item.left);
+      const auto hi      = module_id(layout, item.right);
+      const auto shift   = module_id(layout, item.literal);
+      const auto base    = item.result - 5U;
+      const auto hi64    = module_id(layout, base);
+      const auto lo64    = module_id(layout, base + 1U);
+      const auto shifted = module_id(layout, base + 2U);
+      const auto address = module_id(layout, base + 3U);
+      const auto pointer = module_id(layout, base + 4U);
+      out.emit(spirv::opcode::uconvert, {layout.ulong_type, hi64, hi});
+      out.emit(spirv::opcode::uconvert, {layout.ulong_type, lo64, lo});
+      out.emit(
+        spirv::opcode::shift_left_logical,
+        {
+          layout.ulong_type,
+          shifted,
+          hi64,
+          shift,
+        });
+      out.emit(
+        spirv::opcode::bitwise_or,
+        {
+          layout.ulong_type,
+          address,
+          shifted,
+          lo64,
+        });
+      out.emit(
+        spirv::opcode::convert_u_to_ptr,
+        {
+          layout.element_pointer,
+          pointer,
+          address,
+        });
+      out.emit(
+        spirv::opcode::load,
+        {
+          layout.type,
+          module_id(layout, item.result),
+          pointer,
+          0x2U,
+          4U,
         });
       break;
     }

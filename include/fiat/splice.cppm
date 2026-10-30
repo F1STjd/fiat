@@ -119,6 +119,14 @@ splice(
     splice_error("template has no push block variable");
   }
 
+  const auto ulong_type = std::ranges::find_if(
+    items, [](std::span<const std::uint32_t> item) -> bool {
+      return opcode_of(item.front()) ==
+               std::to_underlying(spirv::opcode::type_int) &&
+             item[ 2 ] == 64U &&
+             item[ 3 ] == 0U;
+    });
+
   const auto layout_of =
     [ & ](const detail::symbol_trace& entry, std::uint32_t first_offset)
     -> function_layout {
@@ -165,6 +173,16 @@ splice(
       splice_error("declared parameter count differs from the trace");
     }
 
+    const auto element_pointer = std::ranges::find_if(
+      items, [ & ](std::span<const std::uint32_t> item) -> bool {
+        return opcode_of(item.front()) ==
+                 std::to_underlying(spirv::opcode::type_pointer) &&
+               item[ 2 ] ==
+                 std::to_underlying(
+                   spirv::storage_class::physical_storage_buffer) &&
+               item[ 3 ] == (*declaration)[ 1 ];
+      });
+
     return {
       .type          = (*declaration)[ 1 ],
       .function_type = (*declaration)[ 4 ],
@@ -174,6 +192,9 @@ splice(
       .uint_type     = (*uint_type)[ 1 ],
       .uint_pointer  = (*uint_pointer)[ 1 ],
       .push          = (*push_variable)[ 2 ],
+      .element_pointer =
+        element_pointer == items.end() ? 0U : (*element_pointer)[ 1 ],
+      .ulong_type = ulong_type == items.end() ? 0U : (*ulong_type)[ 1 ],
     };
   };
 
@@ -192,7 +213,15 @@ splice(
     splice_error("template element type does not match Element");
   }
 
-  spirv::writer out {offset + 1U};
+  std::uint32_t temporaries {};
+  for (const auto& entry : traces)
+  {
+    temporaries += static_cast<std::uint32_t>(
+      5Z *
+      std::ranges::count(
+        entry.instructions, operation::uniform_load, &instruction::code));
+  }
+  spirv::writer out {offset + 1U + temporaries};
   bool          constants_written {false};
   bool          skipping {false};
   for (const auto& item : items)

@@ -206,6 +206,87 @@ operator |(
   -> transform_stage<chain<Left..., Right...>>
 { return fuse(left, right); }
 
+export template<scalar Uniform>
+struct uniform_tag {};
+
+export template<scalar Uniform, class Operation, class... Arguments>
+struct bound_uniform_operation
+{
+  using argument_tuple = std::tuple<Arguments...>;
+  using uniform_type   = Uniform;
+
+  template<scalar Element, class... Values>
+    requires (
+      std::same_as<Element, Uniform> &&
+      (std::same_as<Values, value<Arguments>> && ...) &&
+      uniform_traceable_call<Operation, Element, Uniform, Arguments...>)
+  constexpr
+  auto
+  operator ()(
+    value<Element>&       operand,
+    const value<Uniform>& uniform,
+    const Values&... arguments) const -> value<Element>
+  {
+    if constexpr (
+      std::is_void_v<std::invoke_result_t<
+        Operation,
+        value<Element>&,
+        const value<Uniform>&,
+        const Values&...
+      >>)
+    {
+      Operation {}(operand, uniform, arguments...);
+      return operand;
+    }
+    else
+    {
+      return Operation {}(operand, uniform, arguments...);
+    }
+  }
+};
+
+export template<scalar Uniform, class Operation>
+struct transform_with_stage
+{
+  std::uint64_t                          address {};
+  typename arguments_of<Operation>::type arguments {};
+};
+
+export
+template<class UniformSource, class Operation, class... Arguments>
+  requires (requires(const UniformSource& uniform) {
+    typename UniformSource::element_type;
+    requires scalar<typename UniformSource::element_type>;
+    { uniform.address() } -> std::convertible_to<std::uint64_t>;
+  } && scalar<typename UniformSource::element_type>)
+constexpr auto
+transform_with(const UniformSource& uniform, Operation, Arguments... arguments)
+  -> transform_with_stage<
+    typename UniformSource::element_type,
+    bound_uniform_operation<
+      typename UniformSource::element_type,
+      Operation,
+      Arguments...
+    >
+  >
+{
+  static_assert(
+    std::is_empty_v<Operation>,
+    "fait::transform_with cannot read lambda captures; pass runtime values as "
+    "arguments: fiat::transform_with(scalar, f, value)");
+  static_assert(
+    (scalar<Arguments> && ...),
+    "fait::transform_with arguments must be float std::int32_t or "
+    "std::uint32_t");
+  static_assert(
+    sizeof...(Arguments) <= argument_capacity - 2UZ,
+    "fait::transform_with takes at most 24 further runtime arguments");
+  return {
+    .address   = static_cast<std::uint64_t>(uniform.address()),
+    .arguments = {arguments...},
+  };
+}
+
 export
 template<class Combine, class Identity>
 constexpr auto
@@ -264,6 +345,53 @@ compile(transform_stage<Operation>)
   const std::vector<std::uint32_t> words =
     detail::transform_module<Element, Operation>();
   std::array<std::uint32_t, transform_word_count<Element, Operation>> result {};
+  std::ranges::copy(words, result.begin());
+  return result;
+}
+
+namespace detail
+{
+
+template<scalar Element, scalar Uniform, class Operation>
+  requires uniform_traceable<Operation, Element, Uniform>
+constexpr
+auto
+transform_with_module() -> std::vector<std::uint32_t>
+{
+  const auto instructions = trace_with_uniform<Element, Uniform, Operation>();
+  return splice<Element>(
+    transform_template<Element>(),
+    std::array {
+      symbol_trace {
+        .symbol       = operation_symbol,
+        .instructions = instructions,
+      },
+    });
+}
+
+} // namespace detail
+
+export template<scalar Element, scalar Uniform, class Operation>
+  requires uniform_traceable<Operation, Element, Uniform>
+inline constexpr std::size_t transform_with_word_count =
+  detail::transform_with_module<Element, Uniform, Operation>().size();
+
+export
+template<scalar Element, scalar Uniform, class Operation>
+  requires uniform_traceable<Operation, Element, Uniform>
+consteval auto
+compile(transform_with_stage<Uniform, Operation>) -> std::array<
+  std::uint32_t,
+  transform_with_word_count<Element, Uniform, Operation>
+>
+{
+  const auto words =
+    detail::transform_with_module<Element, Uniform, Operation>();
+  std::array<
+    std::uint32_t,
+    transform_with_word_count<Element, Uniform, Operation>
+  >
+    result {};
   std::ranges::copy(words, result.begin());
   return result;
 }

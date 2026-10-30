@@ -26,6 +26,8 @@ export enum class opcode : std::uint16_t
   load               = 61,
   access_chain       = 65,
   decorate           = 71,
+  uconvert           = 113,
+  convert_u_to_ptr   = 120,
   bitcast            = 124,
   snegate            = 126,
   fnegate            = 127,
@@ -38,6 +40,8 @@ export enum class opcode : std::uint16_t
   udiv               = 134,
   sdiv               = 135,
   fdiv               = 136,
+  shift_left_logical = 196,
+  bitwise_or         = 197,
   label              = 248,
   return_value       = 254,
 };
@@ -60,7 +64,8 @@ export enum class memory_model : std::uint32_t
 
 export enum class storage_class : std::uint32_t
 {
-  push_constant = 9,
+  push_constant           = 9,
+  physical_storage_buffer = 5'349,
 };
 
 export enum class decoration : std::uint32_t

@@ -38,6 +38,7 @@ export enum class operation : std::uint8_t
   argument_address,
   argument_load,
   argument_cast,
+  uniform_load,
 };
 
 inline constexpr std::uint32_t argument_member {4U};
@@ -75,6 +76,27 @@ public:
       push(operation::argument_load, scalar_kind::uint32, address, 0U, 0U);
     if (kind == scalar_kind::uint32) { return bits; }
     return push(operation::argument_cast, kind, bits, 0U, 0U);
+  }
+
+  constexpr
+  auto
+  emit_uniform(scalar_kind kind, std::uint32_t slot) -> std::uint32_t
+  {
+    const auto member     = emit_constant(scalar_kind::uint32, argument_member);
+    const auto lo_index   = emit_constant(scalar_kind::uint32, slot);
+    const auto hi_index   = emit_constant(scalar_kind::uint32, slot + 1U);
+    const auto shift      = emit_constant(scalar_kind::uint32, 32U);
+    const auto lo_address = push(
+      operation::argument_address, scalar_kind::uint32, member, lo_index, 0U);
+    const auto lo =
+      push(operation::argument_load, scalar_kind::uint32, lo_address, 0U, 0U);
+    const auto hi_address = push(
+      operation::argument_address, scalar_kind::uint32, member, hi_index, 0U);
+    const auto hi =
+      push(operation::argument_load, scalar_kind::uint32, hi_address, 0U, 0U);
+    next_id_          += 5U;
+    const auto result  = push(operation::uniform_load, kind, lo, hi, shift);
+    return result;
   }
 
   constexpr
