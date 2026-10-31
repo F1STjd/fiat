@@ -19,11 +19,14 @@ target_sources(fiat
       include/fiat/emit.cppm
       include/fiat/templates.cppm
       include/fiat/splice.cppm
-      include/fiat/kernel.cppm)
+      include/fiat/kernel.cppm
+      include/fiat/structs.cppm)
 
 target_compile_features(fiat PUBLIC cxx_std_26)
 set_target_properties(fiat PROPERTIES CXX_MODULE_STD ON)
 vkpp_enable_warnings(fiat)
+
+target_compile_options(fiat PUBLIC $<$<CXX_COMPILER_ID:GNU>:-freflection>)
 
 find_program(FIAT_SPIRV_AS spirv-as REQUIRED HINTS "$ENV{VULKAN_SDK}/Bin")
 find_program(FIAT_SPIRV_VAL spirv-val REQUIRED HINTS "$ENV{VULKAN_SDK}/Bin")
