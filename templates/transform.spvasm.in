@@ -6,6 +6,7 @@
                OpCapability PhysicalStorageBufferAddresses
                OpCapability Int64
                OpCapability Linkage
+       %glsl = OpExtInstImport "GLSL.std.450"
                OpMemoryModel PhysicalStorageBuffer64 GLSL450
                OpEntryPoint GLCompute %main "fiat_transform" %global_id %push
                OpExecutionModeId %main LocalSizeId %group_size %one %one

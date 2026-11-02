@@ -6,3 +6,5 @@ export import :emit;
 export import :templates;
 export import :splice;
 export import :kernel;
+export import :structs;
+export import :ops;

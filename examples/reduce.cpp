@@ -1,15 +1,14 @@
 import std;
 import fiat;
 
-constexpr auto plus   = [](auto left, auto right) { return left + right; };
-constexpr auto square = [](auto& value) { return value * value; };
-
-constexpr auto float_words = fiat::compile<float>(fiat::reduce(plus, 0.0F));
-constexpr auto int_words   = fiat::compile<std::int32_t>(fiat::reduce(plus, 0));
+constexpr auto float_words =
+  fiat::compile<float>(fiat::reduce(fiat::plus {}, 0.0F));
+constexpr auto int_words =
+  fiat::compile<std::int32_t>(fiat::reduce(fiat::plus {}, 0));
 constexpr auto uint_words =
-  fiat::compile<std::uint32_t>(fiat::reduce(plus, 0U));
-constexpr auto fused_words =
-  fiat::compile<std::int32_t>(fiat::transform(square) | fiat::reduce(plus, 0));
+  fiat::compile<std::uint32_t>(fiat::reduce(fiat::plus {}, 0U));
+constexpr auto fused_words = fiat::compile<std::int32_t>(
+  fiat::transform(fiat::square {}) | fiat::reduce(fiat::plus {}, 0));
 
 auto
 main() -> int

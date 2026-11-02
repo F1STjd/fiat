@@ -250,9 +250,7 @@ trace_with_uniform() -> std::vector<instruction>
   return std::move(target).instructions();
 }
 
-} // namespace detail
-
-constexpr
+export constexpr
 auto
 opcode_for(operation code, scalar_kind kind) -> spirv::opcode
 {
@@ -272,6 +270,9 @@ opcode_for(operation code, scalar_kind kind) -> spirv::opcode
   }
   case operation::negate :
     return floating ? spirv::opcode::fnegate : spirv::opcode::snegate;
+  case operation::minimum          :
+  case operation::maximum          :
+  case operation::abs              :
   case operation::parameter        :
   case operation::constant         :
   case operation::result           :
@@ -282,6 +283,8 @@ opcode_for(operation code, scalar_kind kind) -> spirv::opcode
   }
   std::unreachable();
 }
+
+} // namespace detail
 
 struct function_layout
 {
@@ -295,6 +298,7 @@ struct function_layout
   std::uint32_t push {};
   std::uint32_t element_pointer {};
   std::uint32_t ulong_type {};
+  std::uint32_t glsl_std_450 {};
 };
 
 constexpr
@@ -381,7 +385,7 @@ emit_definition(
     case operation::divide :
     {
       out.emit(
-        opcode_for(item.code, item.kind),
+        detail::opcode_for(item.code, item.kind),
         {
           layout.type,
           module_id(layout, item.result),
@@ -393,10 +397,77 @@ emit_definition(
     case operation::negate :
     {
       out.emit(
-        opcode_for(item.code, item.kind),
+        detail::opcode_for(item.code, item.kind),
         {
           layout.type,
           module_id(layout, item.result),
+          module_id(layout, item.left),
+        });
+      break;
+    }
+    case operation::minimum :
+    {
+      const auto instruction = [ & ] -> spirv::glsl_std_450 {
+        if (item.kind == scalar_kind::float32)
+        {
+          return spirv::glsl_std_450::umin;
+        }
+        if (item.kind == scalar_kind::int32)
+        {
+          return spirv::glsl_std_450::umin;
+        }
+        return spirv::glsl_std_450::umin;
+      }();
+      out.emit(
+        spirv::opcode::ext_inst,
+        {
+          constant_type(layout, item.kind),
+          module_id(layout, item.result),
+          layout.glsl_std_450,
+          std::to_underlying(instruction),
+          module_id(layout, item.left),
+          module_id(layout, item.right),
+        });
+      break;
+    }
+    case operation::maximum :
+    {
+      const auto instruction = [ & ] -> spirv::glsl_std_450 {
+        if (item.kind == scalar_kind::float32)
+        {
+          return spirv::glsl_std_450::umax;
+        }
+        if (item.kind == scalar_kind::int32)
+        {
+          return spirv::glsl_std_450::umax;
+        }
+        return spirv::glsl_std_450::umax;
+      }();
+      out.emit(
+        spirv::opcode::ext_inst,
+        {
+          constant_type(layout, item.kind),
+          module_id(layout, item.result),
+          layout.glsl_std_450,
+          std::to_underlying(instruction),
+          module_id(layout, item.left),
+          module_id(layout, item.right),
+        });
+      break;
+    }
+    case operation::abs :
+    {
+      const auto instruction =
+        item.kind == scalar_kind::float32
+          ? spirv::glsl_std_450::fabs
+          : spirv::glsl_std_450::sabs;
+      out.emit(
+        spirv::opcode::ext_inst,
+        {
+          constant_type(layout, item.kind),
+          module_id(layout, item.result),
+          layout.glsl_std_450,
+          std::to_underlying(instruction),
           module_id(layout, item.left),
         });
       break;

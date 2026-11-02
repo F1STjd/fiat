@@ -127,6 +127,12 @@ splice(
              item[ 3 ] == 0U;
     });
 
+  const auto glsl_std_450 = std::ranges::find_if(
+    items, [](std::span<const std::uint32_t> item) -> bool {
+      return opcode_of(item.front()) ==
+             std::to_underlying(spirv::opcode::ext_inst_import);
+    });
+
   const auto layout_of =
     [ & ](const detail::symbol_trace& entry, std::uint32_t first_offset)
     -> function_layout {
@@ -194,7 +200,8 @@ splice(
       .push          = (*push_variable)[ 2 ],
       .element_pointer =
         element_pointer == items.end() ? 0U : (*element_pointer)[ 1 ],
-      .ulong_type = ulong_type == items.end() ? 0U : (*ulong_type)[ 1 ],
+      .ulong_type   = ulong_type == items.end() ? 0U : (*ulong_type)[ 1 ],
+      .glsl_std_450 = glsl_std_450 == items.end() ? 0U : (*glsl_std_450)[ 1 ],
     };
   };
 

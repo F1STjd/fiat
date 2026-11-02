@@ -12,6 +12,7 @@
                OpCapability VulkanMemoryModel
                OpCapability VulkanMemoryModelDeviceScope
                OpCapability Linkage
+       %glsl = OpExtInstImport "GLSL.std.450"
                OpMemoryModel PhysicalStorageBuffer64 Vulkan
                OpEntryPoint GLCompute %main "fiat_reduce" %local_id %group_id %group_count %push %shared_values %shared_flag
                OpExecutionModeId %main LocalSizeId %group_size %one %one

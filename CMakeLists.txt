@@ -20,7 +20,8 @@ target_sources(fiat
       include/fiat/templates.cppm
       include/fiat/splice.cppm
       include/fiat/kernel.cppm
-      include/fiat/structs.cppm)
+      include/fiat/structs.cppm
+      include/fiat/ops.cppm)
 
 target_compile_features(fiat PUBLIC cxx_std_26)
 set_target_properties(fiat PROPERTIES CXX_MODULE_STD ON)

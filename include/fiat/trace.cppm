@@ -34,6 +34,9 @@ export enum class operation : std::uint8_t
   multiply,
   divide,
   negate,
+  minimum,
+  maximum,
+  abs,
   result,
   argument_address,
   argument_load,
@@ -418,6 +421,49 @@ operator -(const value<Type>& operand) -> value<Type>
     target.emit_unary(operation::negate, kind_of<Type>, operand.id()),
   };
 }
+
+export
+template<scalar Type>
+  requires (!std::same_as<Type, std::uint32_t>)
+constexpr auto
+abs(const value<Type>& operand) -> value<Type>
+{
+  detail::recorder& target = operand.target();
+  return value<Type> {
+    target,
+    target.emit_unary(operation::abs, kind_of<Type>, operand.id()),
+  };
+}
+
+export
+auto
+abs(const value<std::uint32_t>&) -> value<std::uint32_t> = delete(
+  "abs on std::uint32_t has no SPIR-V GLSL.std.450 opcode; unsigned abs is the "
+  "identity - pass the value through");
+
+export
+template<scalar Type, operand_for<Type> Right>
+constexpr auto
+min(const value<Type>& left, const Right& right) -> value<Type>
+{ return combine<Type>(operation::minimum, left, right); }
+
+export
+template<scalar Type, literal_for<Type> Left>
+constexpr auto
+min(const Left& left, const value<Type>& right) -> value<Type>
+{ return combine<Type>(operation::minimum, left, right); }
+
+export
+template<scalar Type, operand_for<Type> Right>
+constexpr auto
+max(const value<Type>& left, const Right& right) -> value<Type>
+{ return combine<Type>(operation::maximum, left, right); }
+
+export
+template<scalar Type, literal_for<Type> Left>
+constexpr auto
+max(const Left& left, const value<Type>& right) -> value<Type>
+{ return combine<Type>(operation::maximum, left, right); }
 
 export
 auto
