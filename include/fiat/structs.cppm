@@ -26,7 +26,7 @@ concept soa_element = std::is_aggregate_v<T> && !std::is_polymorphic_v<T>;
 namespace detail
 {
 
-consteval
+constexpr
 auto
 align_up(std::size_t value, std::size_t alignment) -> std::size_t
 { return (value + alignment - 1UZ) / alignment * alignment; }
@@ -37,8 +37,9 @@ template<soa_element T>
 inline constexpr std::size_t leaf_count_v = [] consteval {
   std::size_t count {};
   template for (
-    constexpr auto member : std::meta::nonstatic_data_members_of(
-      ^^T, std::meta::access_context::current()))
+    constexpr auto member : std::define_static_array(
+      std::meta::nonstatic_data_members_of(
+        ^^T, std::meta::access_context::unchecked())))
   {
     using leaf = [:std::meta::type_of(member):];
     static_assert(scalar<leaf>);
@@ -53,8 +54,9 @@ inline constexpr std::array<scalar_kind, leaf_count_v<T>> leaf_kinds_v =
     std::array<scalar_kind, leaf_count_v<T>> kinds {};
     std::size_t                              index {};
     template for (
-      constexpr auto member : std::meta::nonstatic_data_members_of(
-        ^^T, std::meta::access_context::current()))
+      constexpr auto member : std::define_static_array(
+        std::meta::nonstatic_data_members_of(
+          ^^T, std::meta::access_context::unchecked())))
     {
       using leaf       = [:std::meta::type_of(member):];
       kinds[ index++ ] = kind_of<leaf>;
@@ -62,9 +64,9 @@ inline constexpr std::array<scalar_kind, leaf_count_v<T>> leaf_kinds_v =
     return kinds;
   }();
 
+export
 template<soa_element T>
-consteval
-auto
+constexpr auto
 region_offset(std::uint32_t count, std::size_t leaf) -> std::uint64_t
 {
   const auto stride =
@@ -74,7 +76,7 @@ region_offset(std::uint32_t count, std::size_t leaf) -> std::uint64_t
 
 export
 template<soa_element T>
-consteval auto
+constexpr auto
 soa_bytes(std::uint32_t count) -> std::uint64_t
 { return region_offset<T>(count, leaf_count_v<T>); }
 
@@ -87,14 +89,14 @@ template<soa_element T>
 inline constexpr std::array<scalar_kind, 0UZ> leaf_kinds_v {};
 
 template<soa_element T>
-consteval
+constexpr
 auto
 region_offset(std::uint32_t, std::size_t) -> std::uint64_t
 { return {}; }
 
 export
 template<soa_element T>
-consteval auto
+constexpr auto
 soa_bytes(std::uint32_t) -> std::uint64_t
 { return {}; }
 
@@ -138,8 +140,9 @@ struct traced_struct_impl
   {
     std::vector<std::meta::info> members {};
     template for (
-      constexpr auto member : std::meta::nonstatic_data_members_of(
-        ^^T, std::meta::access_context::unchecked()))
+      constexpr auto member : std::define_static_array(
+        std::meta::nonstatic_data_members_of(
+          ^^T, std::meta::access_context::unchecked())))
     {
       using leaf_type = [:std::meta::type_of(member):];
       members.push_back(
@@ -194,23 +197,6 @@ concept foreach_traceable_call =
       const value<Arguments>&...
     >>);
 
-template<class Operation, class Element, class Arguments>
-inline constexpr bool foreach_traceable_arguments {false};
-
-template<class Operation, class Element, class... Arguments>
-inline constexpr bool
-  foreach_traceable_arguments<Operation, Element, std::tuple<Arguments...>> =
-    foreach_traceable_call<Operation, Element, Arguments...>;
-
-export template<class Operation, class Element>
-concept foreach_traceable =
-  soa_element<Element> &&
-  foreach_traceable_arguments<
-    Operation,
-    Element,
-    typename arguments_of<Operation>::type
-  >;
-
 export template<class Operation, class... Arguments>
 struct bound_foreach
 {
@@ -241,6 +227,40 @@ struct bound_foreach
 #endif
   }
 };
+
+template<class Operation, class Element, class Arguments>
+inline constexpr bool foreach_traceable_arguments {false};
+
+template<class Operation, class Element, class... Arguments>
+inline constexpr bool
+  foreach_traceable_arguments<Operation, Element, std::tuple<Arguments...>> =
+    foreach_traceable_call<Operation, Element, Arguments...>;
+
+namespace detail
+{
+
+template<class Operation>
+struct foreach_callable
+{
+  using type = Operation;
+};
+
+template<class Operation, class... Arguments>
+struct foreach_callable<bound_foreach<Operation, Arguments...>>
+{
+  using type = Operation;
+};
+
+} // namespace detail
+
+export template<class Operation, class Element>
+concept foreach_traceable =
+  soa_element<Element> &&
+  foreach_traceable_arguments<
+    typename detail::foreach_callable<Operation>::type,
+    Element,
+    typename arguments_of<Operation>::type
+  >;
 
 export
 template<class Operation, class... Arguments>
@@ -275,9 +295,11 @@ consteval
 auto
 bind_leaf(recorder& target, std::uint32_t id)
 {
-  constexpr auto member = std::meta::nonstatic_data_members_of(
-    ^^Element, std::meta::access_context::unchecked())[ Index ];
-  using leaf = [:std::meta::type_of(member):];
+  static constexpr auto members = std::define_static_array(
+    std::meta::nonstatic_data_members_of(
+      ^^Element, std::meta::access_context::unchecked()));
+  constexpr auto member = members[ Index ];
+  using leaf            = [:std::meta::type_of(member):];
   return value<leaf> {target, id};
 }
 
@@ -338,11 +360,12 @@ auto
 traced_leaf_id(const traced_struct<Element>& operand, std::size_t leaf)
   -> std::uint32_t
 {
-  std::size_t index {};
-  template for (
-    constexpr auto member : std::meta::nonstatic_data_members_of(
+  std::size_t           index {};
+  static constexpr auto members = std::define_static_array(
+    std::meta::nonstatic_data_members_of(
       ^^typename traced_struct_impl<Element>::type,
-      std::meta::access_context::unchecked()))
+      std::meta::access_context::unchecked()));
+  template for (constexpr auto member : members)
   {
     if (index == leaf) { return operand.[:member:].id(); }
     ++index;
@@ -370,19 +393,7 @@ trace_foreach() -> std::vector<instruction>
     bind_traced_arguments(target, std::type_identity<argument_tuple> {});
   std::apply(
     [ & ](const auto&... argument) {
-      if constexpr (
-        std::is_void_v<std::invoke_result_t<
-          Operation,
-          traced_struct<Element>&,
-          decltype(argument)...
-        >>)
-      {
-        Operation {}(operand, argument...);
-      }
-      else
-      {
-        operand = Operation {}(operand, argument...);
-      }
+      Operation {}.template operator ()<Element>(operand, argument...);
     },
     arguments);
 
@@ -476,16 +487,6 @@ foreach_module() -> std::vector<std::uint32_t>
   const std::uint32_t id_count_x4     = advance_id();
   const std::uint32_t id_count_x4_255 = advance_id();
   const std::uint32_t id_stride       = advance_id();
-
-  auto constant_temps = static_cast<
-    std::uint32_t
-  >(std::ranges::count_if(instructions, [](const instruction& item) -> bool {
-    return item.code == operation::constant && item.kind == scalar_kind::float32;
-  }));
-
-  const std::uint32_t id_const_bits_base = advance_id();
-
-  for (auto _ : std::views::iota(1U, constant_temps)) { advance_id(); }
 
   std::uint32_t trace_high {1U};
   for (const instruction& item : instructions)
@@ -733,6 +734,17 @@ foreach_module() -> std::vector<std::uint32_t>
       {id_uint, id_leaf_const[ leaf ], static_cast<std::uint32_t>(leaf)});
   }
 
+  for (
+    const instruction& item :
+    instructions | std::views::filter([](const instruction& candidate) -> bool {
+      return candidate.code == operation::constant;
+    }))
+  {
+    out.emit(
+      spirv::opcode::constant,
+      {type_of(item.kind), mapped_id(item.result), item.literal});
+  }
+
   out.emit(
     spirv::opcode::variable,
     {
@@ -835,32 +847,15 @@ foreach_module() -> std::vector<std::uint32_t>
 
   std::size_t                               result_leaf {};
   std::array<std::uint32_t, soa_leaf_limit> id_result {};
-  std::uint32_t next_const_bits {id_const_bits_base};
   for (const instruction& item : instructions)
   {
     switch (item.code)
     {
     case operation::parameter : break;
-    case operation::constant :
-    {
-      if (item.kind == scalar_kind::float32)
-      {
-        const std::uint32_t bits {next_const_bits++};
-        out.emit(spirv::opcode::constant, {id_uint, bits, item.literal});
-        out.emit(
-          spirv::opcode::bitcast, {id_float, mapped_id(item.result), bits});
-      }
-      else
-      {
-        out.emit(
-          spirv::opcode::constant,
-          {type_of(item.kind), mapped_id(item.result), item.literal});
-      }
-      break;
-    }
-    case operation::add      :
-    case operation::subtract :
-    case operation::multiply :
+    case operation::constant  : break;
+    case operation::add       :
+    case operation::subtract  :
+    case operation::multiply  :
     case operation::divide :
     {
       out.emit(
@@ -896,12 +891,12 @@ foreach_module() -> std::vector<std::uint32_t>
       out.emit(
         spirv::opcode::ext_inst,
         {
-          /* type_of(item.kind),
-          module_id(item.result),
+          type_of(item.kind),
+          mapped_id(item.result),
           id_glsl,
           std::to_underlying(instruction),
-          module_id(item.left),
-          module_id(item.right), */
+          mapped_id(item.left),
+          mapped_id(item.right),
         });
       break;
     }
@@ -921,12 +916,12 @@ foreach_module() -> std::vector<std::uint32_t>
       out.emit(
         spirv::opcode::ext_inst,
         {
-          /* type_of(item.kind),
-          module_id(item.result),
+          type_of(item.kind),
+          mapped_id(item.result),
           id_glsl,
           std::to_underlying(instruction),
-          module_id(item.left),
-          module_id(item.right), */
+          mapped_id(item.left),
+          mapped_id(item.right),
         });
       break;
     }
@@ -939,11 +934,11 @@ foreach_module() -> std::vector<std::uint32_t>
       out.emit(
         spirv::opcode::ext_inst,
         {
-          /* type_of(item.kind),
-          module_id(item.result),
+          type_of(item.kind),
+          mapped_id(item.result),
           id_glsl,
           std::to_underlying(instruction),
-          module_id(item.left), */
+          mapped_id(item.left),
         });
       break;
     }
