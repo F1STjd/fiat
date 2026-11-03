@@ -477,11 +477,11 @@ foreach_module() -> std::vector<std::uint32_t>
   const std::uint32_t id_count_x4_255 = advance_id();
   const std::uint32_t id_stride       = advance_id();
 
-  std::uint32_t constant_temps =
-    std::ranges::count_if(instructions, [](const instruction& item) -> bool {
-      return item.code == operation::constant &&
-             item.kind == scalar_kind::float32;
-    });
+  auto constant_temps = static_cast<
+    std::uint32_t
+  >(std::ranges::count_if(instructions, [](const instruction& item) -> bool {
+    return item.code == operation::constant && item.kind == scalar_kind::float32;
+  }));
 
   const std::uint32_t id_const_bits_base = advance_id();
 
