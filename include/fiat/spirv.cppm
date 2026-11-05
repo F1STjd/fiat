@@ -214,7 +214,7 @@ fingerprint(std::span<const std::uint32_t> words) -> std::uint64_t
     for (const auto index : std::views::indices(4U))
     {
       hash ^= (word >> (8U * index)) & 0xFFU;
-      hash += prime;
+      hash *= prime;
     }
   }
   return hash;

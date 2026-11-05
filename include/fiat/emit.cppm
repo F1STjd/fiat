@@ -410,11 +410,11 @@ emit_definition(
       const auto instruction = [ & ] -> spirv::glsl_std_450 {
         if (item.kind == scalar_kind::float32)
         {
-          return spirv::glsl_std_450::umin;
+          return spirv::glsl_std_450::fmin;
         }
         if (item.kind == scalar_kind::int32)
         {
-          return spirv::glsl_std_450::umin;
+          return spirv::glsl_std_450::smin;
         }
         return spirv::glsl_std_450::umin;
       }();
@@ -435,11 +435,11 @@ emit_definition(
       const auto instruction = [ & ] -> spirv::glsl_std_450 {
         if (item.kind == scalar_kind::float32)
         {
-          return spirv::glsl_std_450::umax;
+          return spirv::glsl_std_450::fmax;
         }
         if (item.kind == scalar_kind::int32)
         {
-          return spirv::glsl_std_450::umax;
+          return spirv::glsl_std_450::smax;
         }
         return spirv::glsl_std_450::umax;
       }();
