@@ -48,6 +48,10 @@ export struct reduce_push
 
 } // namespace detail
 
+export inline constexpr std::size_t reduce_result_offset {4UZ};
+static_assert(
+  reduce_result_offset == 4UZ, "scratch member 1 holds the reduced value");
+
 static_assert(
   sizeof(detail::transform_push) ==
     detail::argument_offset + argument_capacity * sizeof(std::uint32_t),
