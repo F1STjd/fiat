@@ -88,4 +88,13 @@ export struct absolute
   { return abs(operand); }
 };
 
+export struct identity
+{
+  template<scalar Type>
+  constexpr
+  auto
+  operator ()(const value<Type>& operand) const -> value<Type>
+  { return operand; }
+};
+
 } // namespace fiat
