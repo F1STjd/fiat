@@ -120,9 +120,10 @@ concept combinable =
 
 template<
   class Operation,
-  scalar Element,
+  std::size_t FirstSlot,
+  scalar      Element,
   class... Arguments,
-  std::size_t... Slots
+  std::size_t... Indices
 >
 constexpr
 void
@@ -130,14 +131,14 @@ trace_call(
   [[maybe_unused]] detail::recorder& target,
   value<Element>&                    parameter,
   std::type_identity<std::tuple<Arguments...>>,
-  std::index_sequence<Slots...>)
+  std::index_sequence<Indices...>)
 {
   [[maybe_unused]]
   const std::tuple<value<Arguments>...> arguments {
     value<Arguments> {
       target,
       target.emit_argument(
-        kind_of<Arguments>, static_cast<std::uint32_t>(Slots)),
+        kind_of<Arguments>, static_cast<std::uint32_t>(FirstSlot + Indices)),
     }...,
   };
   if constexpr (
@@ -145,11 +146,11 @@ trace_call(
       std::invoke_result_t<Operation, value<Element>&, const value<Arguments>&...>
     >)
   {
-    Operation {}(parameter, std::get<Slots>(arguments)...);
+    Operation {}(parameter, std::get<Indices>(arguments)...);
   }
   else
   {
-    parameter = Operation {}(parameter, std::get<Slots>(arguments)...);
+    parameter = Operation {}(parameter, std::get<Indices>(arguments)...);
   }
 }
 
@@ -207,7 +208,26 @@ trace() -> std::vector<instruction>
 
   recorder       target {};
   value<Element> parameter {target, target.emit_parameter(kind_of<Element>)};
-  trace_call<Operation>(
+  trace_call<Operation, 0UZ>(
+    target,
+    parameter,
+    std::type_identity<argument_tuple> {},
+    std::make_index_sequence<std::tuple_size_v<argument_tuple>> {});
+  target.emit_result(kind_of<Element>, parameter.id());
+  return std::move(target).instructions();
+}
+
+template<scalar Element, class Operation, std::size_t FirstSlot>
+  requires traceable<Operation, Element>
+constexpr
+auto
+trace_from_slot() -> std::vector<instruction>
+{
+  using argument_tuple = typename arguments_of<Operation>::type;
+
+  recorder       target {};
+  value<Element> parameter {target, target.emit_parameter(kind_of<Element>)};
+  trace_call<Operation, FirstSlot>(
     target,
     parameter,
     std::type_identity<argument_tuple> {},

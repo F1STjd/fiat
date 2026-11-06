@@ -6,6 +6,7 @@ import :trace;
 import :emit;
 import :templates;
 import :splice;
+import :ops;
 
 namespace fiat
 {
@@ -72,11 +73,17 @@ struct transform_stage
   typename arguments_of<Operation>::type arguments {};
 };
 
-export template<class Operation, class Combine, class Identity>
+export template<
+  class Operation,
+  class Combine,
+  class Identity,
+  class Epilogue = identity
+>
 struct reduce_stage
 {
   typename arguments_of<Operation>::type arguments {};
   Identity                               identity {};
+  typename arguments_of<Epilogue>::type  epilogue_arguments {};
 };
 
 export template<class Operation, class... Arguments>
@@ -301,7 +308,11 @@ reduce(Combine, Identity identity) -> reduce_stage<chain<>, Combine, Identity>
     std::tuple_size_v<typename arguments_of<Combine>::type> == 0UZ,
     "fiat::reduce combine operations take no runtime arguments; fuse a "
     "fiat::transform before the reduce instead");
-  return {.arguments = {}, .identity = identity};
+  return {
+    .arguments          = {},
+    .identity           = identity,
+    .epilogue_arguments = {},
+  };
 }
 
 export
@@ -311,7 +322,13 @@ operator |(
   transform_stage<chain<Left...>>          left,
   reduce_stage<chain<>, Combine, Identity> right)
   -> reduce_stage<chain<Left...>, Combine, Identity>
-{ return {.arguments = left.arguments, .identity = right.identity}; }
+{
+  return {
+    .arguments          = left.arguments,
+    .identity           = right.identity,
+    .epilogue_arguments = {},
+  };
+}
 
 namespace detail
 {
@@ -399,15 +416,34 @@ compile(transform_with_stage<Uniform, Operation>) -> std::array<
 namespace detail
 {
 
-template<scalar Element, class Operation, class Combine>
-  requires (traceable<Operation, Element> && combinable<Combine, Element>)
+template<
+  scalar Element,
+  class Operation,
+  class Combine,
+  class Epilogue = identity
+>
+  requires (
+    traceable<Operation, Element> &&
+    combinable<Combine, Element> &&
+    traceable<Epilogue, Element>)
 constexpr
 auto
 reduce_module() -> std::vector<std::uint32_t>
 {
+  constexpr auto map_slots =
+    std::tuple_size_v<typename arguments_of<Operation>::type>;
+  constexpr auto epilogue_slots =
+    std::tuple_size_v<typename arguments_of<Epilogue>::type>;
+  static_assert(
+    map_slots + epilogue_slots <= argument_capacity,
+    "fiat::reduce map and epilogue arguments together take at most 26 runtime "
+    "slots");
+
   const std::vector<instruction> map_instructions = trace<Element, Operation>();
   const std::vector<instruction> combine_instructions =
     trace_binary<Element, Combine>();
+  const std::vector<instruction> epilogue_instructions =
+    trace_from_slot<Element, Epilogue, map_slots>();
   return splice<Element>(
     reduce_template<Element>(),
     std::array {
@@ -419,29 +455,52 @@ reduce_module() -> std::vector<std::uint32_t>
         .symbol       = combine_symbol,
         .instructions = combine_instructions,
       },
+      symbol_trace {
+        .symbol       = epilogue_symbol,
+        .instructions = epilogue_instructions,
+      },
     });
 }
 
 } // namespace detail
 
-export template<scalar Element, class Operation, class Combine>
-  requires (traceable<Operation, Element> && combinable<Combine, Element>)
+export template<
+  scalar Element,
+  class Operation,
+  class Combine,
+  class Epilogue = identity
+>
+  requires (traceable<Operation, Element> &&
+             combinable<Combine, Element> &&
+             traceable<Epilogue, Element>)
 inline constexpr std::size_t reduce_word_count =
-  detail::reduce_module<Element, Operation, Combine>().size();
+  detail::reduce_module<Element, Operation, Combine, Epilogue>().size();
 
 export
-template<scalar Element, class Operation, class Combine, class Identity>
+template<
+  scalar Element,
+  class Operation,
+  class Combine,
+  class Identity,
+  class Epilogue = identity
+>
   requires (
     traceable<Operation, Element> &&
     combinable<Combine, Element> &&
-    std::same_as<Identity, Element>)
+    std::same_as<Identity, Element> &&
+    traceable<Epilogue, Element>)
 consteval auto
-compile(reduce_stage<Operation, Combine, Identity>)
-  -> std::array<std::uint32_t, reduce_word_count<Element, Operation, Combine>>
+compile(reduce_stage<Operation, Combine, Identity, Epilogue>) -> std::array<
+  std::uint32_t,
+  reduce_word_count<Element, Operation, Combine, Epilogue>
+>
 {
   const std::vector<std::uint32_t> words =
-    detail::reduce_module<Element, Operation, Combine>();
-  std::array<std::uint32_t, reduce_word_count<Element, Operation, Combine>>
+    detail::reduce_module<Element, Operation, Combine, Epilogue>();
+  std::array<
+    std::uint32_t,
+    reduce_word_count<Element, Operation, Combine, Epilogue>
+  >
     result {};
   std::ranges::copy(words, result.begin());
   return result;
