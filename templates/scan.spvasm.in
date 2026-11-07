@@ -1,0 +1,378 @@
+; fiat scan template. @ELEMENT@ = float | int | uint, @SCAN_EXCLUSIVE@ = OpConstantFalse
+; (inclusive) | OpConstantTrue (exclusive) (CMake configure_file).
+; Assembled with spirv-as --target-env spv1.6, validated with spirv-val --target-env spv1.6.
+; The splicer replaces the Import declarations of %fiat_operation (map, T -> T),
+; %fiat_combine (T, T -> T), and %fiat_epilogue (T -> T) with the traced definitions,
+; and removes OpCapability Linkage plus the LinkageAttributes decorations.
+; Reduce-then-scan in two dispatches of one module. fiat_scan_upsweep: every workgroup scans its
+; contiguous tiles in order, writes its total to partials[group] and takes a ticket (Device scope,
+; AcquireRelease); the workgroup with the last ticket rewrites the partials as exclusive prefixes,
+; writes the raw grand total to scratch member 1 and resets the counter to zero.
+; fiat_scan_downsweep: every workgroup rescans its tiles seeded with partials[group] and stores
+; epilogue(prefix) for every element below count.
+; Combine must be associative (not necessarily commutative); identity must be a true identity of
+; combine. Every combine is (earlier, later).
+; Invariant (one reader per element): an invocation reads global element i only if it is the
+; invocation that writes element i, and reads it before writing it; all cross-element data moves
+; through workgroup memory or the context scratch, so output may be the input (in place).
+               OpCapability Shader
+               OpCapability PhysicalStorageBufferAddresses
+               OpCapability VulkanMemoryModel
+               OpCapability VulkanMemoryModelDeviceScope
+               OpCapability Linkage
+       %glsl = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel PhysicalStorageBuffer64 Vulkan
+               OpEntryPoint GLCompute %upsweep "fiat_scan_upsweep" %local_id %group_id %group_count %push %shared_values %shared_flag
+               OpEntryPoint GLCompute %downsweep "fiat_scan_downsweep" %local_id %group_id %group_count %push %shared_values
+               OpExecutionModeId %upsweep LocalSizeId %group_size %one %one
+               OpExecutionModeId %downsweep LocalSizeId %group_size %one %one
+               OpDecorate %fiat_operation LinkageAttributes "fiat_operation" Import
+               OpDecorate %fiat_combine LinkageAttributes "fiat_combine" Import
+               OpDecorate %fiat_epilogue LinkageAttributes "fiat_epilogue" Import
+               OpDecorate %local_id BuiltIn LocalInvocationId
+               OpDecorate %group_id BuiltIn WorkgroupId
+               OpDecorate %group_count BuiltIn NumWorkgroups
+               OpDecorate %group_size SpecId 0
+               OpDecorate %element_pointer ArrayStride 4
+               OpDecorate %argument_array ArrayStride 4
+               OpDecorate %partials_array ArrayStride 4
+               OpDecorate %scratch_type Block
+               OpMemberDecorate %scratch_type 0 Offset 0
+               OpMemberDecorate %scratch_type 1 Offset 4
+               OpMemberDecorate %scratch_type 2 Offset 8
+               OpDecorate %push_type Block
+               OpMemberDecorate %push_type 0 Offset 0
+               OpMemberDecorate %push_type 1 Offset 8
+               OpMemberDecorate %push_type 2 Offset 16
+               OpMemberDecorate %push_type 3 Offset 20
+               OpMemberDecorate %push_type 4 Offset 24
+               OpMemberDecorate %push_type 5 Offset 120
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+      %float = OpTypeFloat 32
+        %int = OpTypeInt 32 1
+       %uint = OpTypeInt 32 0
+%argument_count = OpConstant %uint 24
+%argument_array = OpTypeArray %uint %argument_count
+     %uint_3 = OpTypeVector %uint 3
+%element_pointer = OpTypePointer PhysicalStorageBuffer %@ELEMENT@
+%partials_array = OpTypeRuntimeArray %@ELEMENT@
+%scratch_type = OpTypeStruct %uint %@ELEMENT@ %partials_array
+%scratch_pointer = OpTypePointer PhysicalStorageBuffer %scratch_type
+%scratch_uint_pointer = OpTypePointer PhysicalStorageBuffer %uint
+%scratch_element_pointer = OpTypePointer PhysicalStorageBuffer %@ELEMENT@
+  %push_type = OpTypeStruct %element_pointer %scratch_pointer %uint %uint %argument_array %element_pointer
+%push_pointer = OpTypePointer PushConstant %push_type
+%push_uint_pointer = OpTypePointer PushConstant %uint
+%push_element_pointer = OpTypePointer PushConstant %element_pointer
+%push_scratch_pointer = OpTypePointer PushConstant %scratch_pointer
+%input_uint_3_pointer = OpTypePointer Input %uint_3
+%input_uint_pointer = OpTypePointer Input %uint
+%main_type = OpTypeFunction %void
+%operation_type = OpTypeFunction %@ELEMENT@ %@ELEMENT@
+%combine_type = OpTypeFunction %@ELEMENT@ %@ELEMENT@ %@ELEMENT@
+       %zero = OpConstant %uint 0
+        %one = OpConstant %uint 1
+        %two = OpConstant %uint 2
+      %three = OpConstant %uint 3
+       %five = OpConstant %uint 5
+     %device = OpConstant %uint 1
+  %workgroup = OpConstant %uint 2
+%semantics_workgroup = OpConstant %uint 264
+%semantics_device = OpConstant %uint 72
+%semantics_release = OpConstant %uint 68
+  %exclusive = @SCAN_EXCLUSIVE@ %bool
+ %group_size = OpSpecConstant %uint 256
+%shared_array = OpTypeArray %@ELEMENT@ %group_size
+%shared_array_pointer = OpTypePointer Workgroup %shared_array
+%shared_element_pointer = OpTypePointer Workgroup %@ELEMENT@
+%shared_uint_pointer = OpTypePointer Workgroup %uint
+   %local_id = OpVariable %input_uint_3_pointer Input
+   %group_id = OpVariable %input_uint_3_pointer Input
+%group_count = OpVariable %input_uint_3_pointer Input
+       %push = OpVariable %push_pointer PushConstant
+%shared_values = OpVariable %shared_array_pointer Workgroup
+%shared_flag = OpVariable %shared_uint_pointer Workgroup
+%fiat_operation = OpFunction %@ELEMENT@ None %operation_type
+%operation_parameter = OpFunctionParameter %@ELEMENT@
+               OpFunctionEnd
+%fiat_combine = OpFunction %@ELEMENT@ None %combine_type
+%combine_left = OpFunctionParameter %@ELEMENT@
+%combine_right = OpFunctionParameter %@ELEMENT@
+               OpFunctionEnd
+%fiat_epilogue = OpFunction %@ELEMENT@ None %operation_type
+%epilogue_parameter = OpFunctionParameter %@ELEMENT@
+               OpFunctionEnd
+; Kogge-Stone (Hillis-Steele) inclusive scan of one value per invocation in workgroup memory.
+; Returns the inclusive prefix of this invocation; afterwards %shared_values holds every
+; invocation's inclusive prefix until the next call (whose first barrier protects the readers).
+ %group_scan = OpFunction %@ELEMENT@ None %operation_type
+%group_scan_value = OpFunctionParameter %@ELEMENT@
+%group_scan_entry = OpLabel
+%group_scan_local_pointer = OpAccessChain %input_uint_pointer %local_id %zero
+%group_scan_local = OpLoad %uint %group_scan_local_pointer
+%group_scan_slot = OpAccessChain %shared_element_pointer %shared_values %group_scan_local
+               OpControlBarrier %workgroup %workgroup %semantics_workgroup
+               OpStore %group_scan_slot %group_scan_value NonPrivatePointer
+               OpControlBarrier %workgroup %workgroup %semantics_workgroup
+               OpBranch %group_scan_header
+%group_scan_header = OpLabel
+%group_scan_offset = OpPhi %uint %one %group_scan_entry %group_scan_offset_next %group_scan_continue
+%group_scan_current = OpPhi %@ELEMENT@ %group_scan_value %group_scan_entry %group_scan_current_next %group_scan_continue
+%group_scan_more = OpULessThan %bool %group_scan_offset %group_size
+               OpLoopMerge %group_scan_exit %group_scan_continue None
+               OpBranchConditional %group_scan_more %group_scan_body %group_scan_exit
+%group_scan_body = OpLabel
+%group_scan_active = OpUGreaterThanEqual %bool %group_scan_local %group_scan_offset
+               OpSelectionMerge %group_scan_combined None
+               OpBranchConditional %group_scan_active %group_scan_combine %group_scan_combined
+%group_scan_combine = OpLabel
+%group_scan_peer_index = OpISub %uint %group_scan_local %group_scan_offset
+%group_scan_peer_slot = OpAccessChain %shared_element_pointer %shared_values %group_scan_peer_index
+%group_scan_peer = OpLoad %@ELEMENT@ %group_scan_peer_slot NonPrivatePointer
+%group_scan_merged = OpFunctionCall %@ELEMENT@ %fiat_combine %group_scan_peer %group_scan_current
+               OpBranch %group_scan_combined
+%group_scan_combined = OpLabel
+%group_scan_current_next = OpPhi %@ELEMENT@ %group_scan_merged %group_scan_combine %group_scan_current %group_scan_body
+               OpControlBarrier %workgroup %workgroup %semantics_workgroup
+               OpStore %group_scan_slot %group_scan_current_next NonPrivatePointer
+               OpControlBarrier %workgroup %workgroup %semantics_workgroup
+               OpBranch %group_scan_continue
+%group_scan_continue = OpLabel
+%group_scan_offset_next = OpShiftLeftLogical %uint %group_scan_offset %one
+               OpBranch %group_scan_header
+%group_scan_exit = OpLabel
+               OpReturnValue %group_scan_current
+               OpFunctionEnd
+; Dispatch 1: tile totals, partials, ticket, last-workgroup exclusive spine.
+    %upsweep = OpFunction %void None %main_type
+%upsweep_entry = OpLabel
+%upsweep_local_pointer = OpAccessChain %input_uint_pointer %local_id %zero
+%upsweep_local = OpLoad %uint %upsweep_local_pointer
+%upsweep_group_pointer = OpAccessChain %input_uint_pointer %group_id %zero
+%upsweep_group = OpLoad %uint %upsweep_group_pointer
+%upsweep_groups_pointer = OpAccessChain %input_uint_pointer %group_count %zero
+%upsweep_groups = OpLoad %uint %upsweep_groups_pointer
+%upsweep_input_member = OpAccessChain %push_element_pointer %push %zero
+%upsweep_input = OpLoad %element_pointer %upsweep_input_member
+%upsweep_scratch_member = OpAccessChain %push_scratch_pointer %push %one
+%upsweep_scratch = OpLoad %scratch_pointer %upsweep_scratch_member
+%upsweep_counter_pointer = OpAccessChain %scratch_uint_pointer %upsweep_scratch %zero
+%upsweep_count_member = OpAccessChain %push_uint_pointer %push %two
+%upsweep_count = OpLoad %uint %upsweep_count_member
+%upsweep_identity_member = OpAccessChain %push_uint_pointer %push %three
+%upsweep_identity_bits = OpLoad %uint %upsweep_identity_member
+%upsweep_identity = OpBitcast %@ELEMENT@ %upsweep_identity_bits
+%upsweep_last_lane = OpISub %uint %group_size %one
+%upsweep_last_slot = OpAccessChain %shared_element_pointer %shared_values %upsweep_last_lane
+%upsweep_count_rounded = OpIAdd %uint %upsweep_count %upsweep_last_lane
+%upsweep_tiles = OpUDiv %uint %upsweep_count_rounded %group_size
+%upsweep_last_group = OpISub %uint %upsweep_groups %one
+%upsweep_tiles_rounded = OpIAdd %uint %upsweep_tiles %upsweep_last_group
+%upsweep_tiles_per_group = OpUDiv %uint %upsweep_tiles_rounded %upsweep_groups
+%upsweep_first_tile = OpIMul %uint %upsweep_group %upsweep_tiles_per_group
+%upsweep_after_tiles = OpIAdd %uint %upsweep_first_tile %upsweep_tiles_per_group
+%upsweep_end_tile = OpExtInst %uint %glsl UMin %upsweep_after_tiles %upsweep_tiles
+               OpBranch %upsweep_tile_header
+%upsweep_tile_header = OpLabel
+%upsweep_tile = OpPhi %uint %upsweep_first_tile %upsweep_entry %upsweep_tile_next %upsweep_tile_continue
+%upsweep_total = OpPhi %@ELEMENT@ %upsweep_identity %upsweep_entry %upsweep_total_next %upsweep_tile_continue
+%upsweep_tile_more = OpULessThan %bool %upsweep_tile %upsweep_end_tile
+               OpLoopMerge %upsweep_tile_exit %upsweep_tile_continue None
+               OpBranchConditional %upsweep_tile_more %upsweep_tile_body %upsweep_tile_exit
+%upsweep_tile_body = OpLabel
+%upsweep_tile_base = OpIMul %uint %upsweep_tile %group_size
+%upsweep_index = OpIAdd %uint %upsweep_tile_base %upsweep_local
+%upsweep_in_range = OpULessThan %bool %upsweep_index %upsweep_count
+               OpSelectionMerge %upsweep_loaded None
+               OpBranchConditional %upsweep_in_range %upsweep_load %upsweep_loaded
+%upsweep_load = OpLabel
+%upsweep_item_pointer = OpPtrAccessChain %element_pointer %upsweep_input %upsweep_index
+%upsweep_item = OpLoad %@ELEMENT@ %upsweep_item_pointer Aligned 4
+%upsweep_mapped = OpFunctionCall %@ELEMENT@ %fiat_operation %upsweep_item
+               OpBranch %upsweep_loaded
+%upsweep_loaded = OpLabel
+%upsweep_value = OpPhi %@ELEMENT@ %upsweep_mapped %upsweep_load %upsweep_identity %upsweep_tile_body
+%upsweep_prefix = OpFunctionCall %@ELEMENT@ %group_scan %upsweep_value
+%upsweep_tile_total = OpLoad %@ELEMENT@ %upsweep_last_slot NonPrivatePointer
+%upsweep_is_first_tile = OpIEqual %bool %upsweep_tile %upsweep_first_tile
+%upsweep_combined = OpFunctionCall %@ELEMENT@ %fiat_combine %upsweep_total %upsweep_tile_total
+%upsweep_total_next = OpSelect %@ELEMENT@ %upsweep_is_first_tile %upsweep_tile_total %upsweep_combined
+               OpBranch %upsweep_tile_continue
+%upsweep_tile_continue = OpLabel
+%upsweep_tile_next = OpIAdd %uint %upsweep_tile %one
+               OpBranch %upsweep_tile_header
+%upsweep_tile_exit = OpLabel
+%upsweep_is_first = OpIEqual %bool %upsweep_local %zero
+               OpSelectionMerge %upsweep_publish_done None
+               OpBranchConditional %upsweep_is_first %upsweep_publish %upsweep_publish_done
+%upsweep_publish = OpLabel
+%upsweep_partial_slot = OpAccessChain %scratch_element_pointer %upsweep_scratch %two %upsweep_group
+               OpStore %upsweep_partial_slot %upsweep_total Aligned|NonPrivatePointer|MakePointerAvailable 4 %device
+%upsweep_ticket = OpAtomicIAdd %uint %upsweep_counter_pointer %device %semantics_device %one
+%upsweep_ticket_last = OpIEqual %bool %upsweep_ticket %upsweep_last_group
+%upsweep_flag_value = OpSelect %uint %upsweep_ticket_last %one %zero
+               OpStore %shared_flag %upsweep_flag_value NonPrivatePointer
+               OpBranch %upsweep_publish_done
+%upsweep_publish_done = OpLabel
+               OpControlBarrier %workgroup %workgroup %semantics_workgroup
+%upsweep_flag = OpLoad %uint %shared_flag NonPrivatePointer
+%upsweep_is_last = OpINotEqual %bool %upsweep_flag %zero
+               OpSelectionMerge %upsweep_spine_done None
+               OpBranchConditional %upsweep_is_last %upsweep_spine %upsweep_spine_done
+%upsweep_spine = OpLabel
+%upsweep_run_rounded = OpIAdd %uint %upsweep_groups %upsweep_last_lane
+%upsweep_run_length = OpUDiv %uint %upsweep_run_rounded %group_size
+%upsweep_run_first_unclamped = OpIMul %uint %upsweep_local %upsweep_run_length
+%upsweep_run_first = OpExtInst %uint %glsl UMin %upsweep_run_first_unclamped %upsweep_groups
+%upsweep_run_after = OpIAdd %uint %upsweep_run_first %upsweep_run_length
+%upsweep_run_end = OpExtInst %uint %glsl UMin %upsweep_run_after %upsweep_groups
+               OpBranch %upsweep_fold_header
+%upsweep_fold_header = OpLabel
+%upsweep_fold_index = OpPhi %uint %upsweep_run_first %upsweep_spine %upsweep_fold_next %upsweep_fold_continue
+%upsweep_fold_total = OpPhi %@ELEMENT@ %upsweep_identity %upsweep_spine %upsweep_fold_total_next %upsweep_fold_continue
+%upsweep_fold_more = OpULessThan %bool %upsweep_fold_index %upsweep_run_end
+               OpLoopMerge %upsweep_fold_exit %upsweep_fold_continue None
+               OpBranchConditional %upsweep_fold_more %upsweep_fold_body %upsweep_fold_exit
+%upsweep_fold_body = OpLabel
+%upsweep_fold_slot = OpAccessChain %scratch_element_pointer %upsweep_scratch %two %upsweep_fold_index
+%upsweep_fold_item = OpLoad %@ELEMENT@ %upsweep_fold_slot Aligned|NonPrivatePointer|MakePointerVisible 4 %device
+%upsweep_fold_is_first = OpIEqual %bool %upsweep_fold_index %upsweep_run_first
+%upsweep_fold_combined = OpFunctionCall %@ELEMENT@ %fiat_combine %upsweep_fold_total %upsweep_fold_item
+%upsweep_fold_total_next = OpSelect %@ELEMENT@ %upsweep_fold_is_first %upsweep_fold_item %upsweep_fold_combined
+               OpBranch %upsweep_fold_continue
+%upsweep_fold_continue = OpLabel
+%upsweep_fold_next = OpIAdd %uint %upsweep_fold_index %one
+               OpBranch %upsweep_fold_header
+%upsweep_fold_exit = OpLabel
+%upsweep_run_prefix = OpFunctionCall %@ELEMENT@ %group_scan %upsweep_fold_total
+%upsweep_has_previous = OpUGreaterThan %bool %upsweep_local %zero
+               OpSelectionMerge %upsweep_seed_done None
+               OpBranchConditional %upsweep_has_previous %upsweep_seed_previous %upsweep_seed_done
+%upsweep_seed_previous = OpLabel
+%upsweep_previous_lane = OpISub %uint %upsweep_local %one
+%upsweep_previous_slot = OpAccessChain %shared_element_pointer %shared_values %upsweep_previous_lane
+%upsweep_previous = OpLoad %@ELEMENT@ %upsweep_previous_slot NonPrivatePointer
+               OpBranch %upsweep_seed_done
+%upsweep_seed_done = OpLabel
+%upsweep_seed = OpPhi %@ELEMENT@ %upsweep_previous %upsweep_seed_previous %upsweep_identity %upsweep_fold_exit
+               OpBranch %upsweep_write_header
+%upsweep_write_header = OpLabel
+%upsweep_write_index = OpPhi %uint %upsweep_run_first %upsweep_seed_done %upsweep_write_next %upsweep_write_continue
+%upsweep_carry = OpPhi %@ELEMENT@ %upsweep_seed %upsweep_seed_done %upsweep_carry_next %upsweep_write_continue
+%upsweep_write_more = OpULessThan %bool %upsweep_write_index %upsweep_run_end
+               OpLoopMerge %upsweep_write_exit %upsweep_write_continue None
+               OpBranchConditional %upsweep_write_more %upsweep_write_body %upsweep_write_exit
+%upsweep_write_body = OpLabel
+%upsweep_write_slot = OpAccessChain %scratch_element_pointer %upsweep_scratch %two %upsweep_write_index
+%upsweep_write_item = OpLoad %@ELEMENT@ %upsweep_write_slot Aligned|NonPrivatePointer|MakePointerVisible 4 %device
+               OpStore %upsweep_write_slot %upsweep_carry Aligned|NonPrivatePointer 4
+%upsweep_carry_next = OpFunctionCall %@ELEMENT@ %fiat_combine %upsweep_carry %upsweep_write_item
+               OpBranch %upsweep_write_continue
+%upsweep_write_continue = OpLabel
+%upsweep_write_next = OpIAdd %uint %upsweep_write_index %one
+               OpBranch %upsweep_write_header
+%upsweep_write_exit = OpLabel
+               OpSelectionMerge %upsweep_result_done None
+               OpBranchConditional %upsweep_is_first %upsweep_result %upsweep_result_done
+%upsweep_result = OpLabel
+%upsweep_grand_total = OpLoad %@ELEMENT@ %upsweep_last_slot NonPrivatePointer
+%upsweep_result_pointer = OpAccessChain %scratch_element_pointer %upsweep_scratch %one
+               OpStore %upsweep_result_pointer %upsweep_grand_total Aligned|NonPrivatePointer 4
+               OpAtomicStore %upsweep_counter_pointer %device %semantics_release %zero
+               OpBranch %upsweep_result_done
+%upsweep_result_done = OpLabel
+               OpBranch %upsweep_spine_done
+%upsweep_spine_done = OpLabel
+               OpReturn
+               OpFunctionEnd
+; Dispatch 2: rescan each tile seeded with this workgroup's exclusive prefix, store epilogue(prefix).
+  %downsweep = OpFunction %void None %main_type
+%downsweep_entry = OpLabel
+%downsweep_local_pointer = OpAccessChain %input_uint_pointer %local_id %zero
+%downsweep_local = OpLoad %uint %downsweep_local_pointer
+%downsweep_group_pointer = OpAccessChain %input_uint_pointer %group_id %zero
+%downsweep_group = OpLoad %uint %downsweep_group_pointer
+%downsweep_groups_pointer = OpAccessChain %input_uint_pointer %group_count %zero
+%downsweep_groups = OpLoad %uint %downsweep_groups_pointer
+%downsweep_input_member = OpAccessChain %push_element_pointer %push %zero
+%downsweep_input = OpLoad %element_pointer %downsweep_input_member
+%downsweep_scratch_member = OpAccessChain %push_scratch_pointer %push %one
+%downsweep_scratch = OpLoad %scratch_pointer %downsweep_scratch_member
+%downsweep_count_member = OpAccessChain %push_uint_pointer %push %two
+%downsweep_count = OpLoad %uint %downsweep_count_member
+%downsweep_identity_member = OpAccessChain %push_uint_pointer %push %three
+%downsweep_identity_bits = OpLoad %uint %downsweep_identity_member
+%downsweep_identity = OpBitcast %@ELEMENT@ %downsweep_identity_bits
+%downsweep_output_member = OpAccessChain %push_element_pointer %push %five
+%downsweep_output = OpLoad %element_pointer %downsweep_output_member
+%downsweep_last_lane = OpISub %uint %group_size %one
+%downsweep_last_slot = OpAccessChain %shared_element_pointer %shared_values %downsweep_last_lane
+%downsweep_count_rounded = OpIAdd %uint %downsweep_count %downsweep_last_lane
+%downsweep_tiles = OpUDiv %uint %downsweep_count_rounded %group_size
+%downsweep_last_group = OpISub %uint %downsweep_groups %one
+%downsweep_tiles_rounded = OpIAdd %uint %downsweep_tiles %downsweep_last_group
+%downsweep_tiles_per_group = OpUDiv %uint %downsweep_tiles_rounded %downsweep_groups
+%downsweep_first_tile = OpIMul %uint %downsweep_group %downsweep_tiles_per_group
+%downsweep_after_tiles = OpIAdd %uint %downsweep_first_tile %downsweep_tiles_per_group
+%downsweep_end_tile = OpExtInst %uint %glsl UMin %downsweep_after_tiles %downsweep_tiles
+%downsweep_partial_slot = OpAccessChain %scratch_element_pointer %downsweep_scratch %two %downsweep_group
+%downsweep_seed = OpLoad %@ELEMENT@ %downsweep_partial_slot Aligned 4
+%downsweep_has_previous = OpUGreaterThan %bool %downsweep_local %zero
+%downsweep_previous_lane = OpISub %uint %downsweep_local %one
+               OpBranch %downsweep_tile_header
+%downsweep_tile_header = OpLabel
+%downsweep_tile = OpPhi %uint %downsweep_first_tile %downsweep_entry %downsweep_tile_next %downsweep_tile_continue
+%downsweep_carry = OpPhi %@ELEMENT@ %downsweep_seed %downsweep_entry %downsweep_carry_next %downsweep_tile_continue
+%downsweep_tile_more = OpULessThan %bool %downsweep_tile %downsweep_end_tile
+               OpLoopMerge %downsweep_tile_exit %downsweep_tile_continue None
+               OpBranchConditional %downsweep_tile_more %downsweep_tile_body %downsweep_tile_exit
+%downsweep_tile_body = OpLabel
+%downsweep_tile_base = OpIMul %uint %downsweep_tile %group_size
+%downsweep_index = OpIAdd %uint %downsweep_tile_base %downsweep_local
+%downsweep_in_range = OpULessThan %bool %downsweep_index %downsweep_count
+               OpSelectionMerge %downsweep_loaded None
+               OpBranchConditional %downsweep_in_range %downsweep_load %downsweep_loaded
+%downsweep_load = OpLabel
+%downsweep_item_pointer = OpPtrAccessChain %element_pointer %downsweep_input %downsweep_index
+%downsweep_item = OpLoad %@ELEMENT@ %downsweep_item_pointer Aligned 4
+%downsweep_mapped = OpFunctionCall %@ELEMENT@ %fiat_operation %downsweep_item
+               OpBranch %downsweep_loaded
+%downsweep_loaded = OpLabel
+%downsweep_value = OpPhi %@ELEMENT@ %downsweep_mapped %downsweep_load %downsweep_identity %downsweep_tile_body
+%downsweep_inclusive = OpFunctionCall %@ELEMENT@ %group_scan %downsweep_value
+%downsweep_tile_total = OpLoad %@ELEMENT@ %downsweep_last_slot NonPrivatePointer
+               OpSelectionMerge %downsweep_prefix_done None
+               OpBranchConditional %exclusive %downsweep_exclusive %downsweep_inclusive_prefix
+%downsweep_inclusive_prefix = OpLabel
+%downsweep_inclusive_value = OpFunctionCall %@ELEMENT@ %fiat_combine %downsweep_carry %downsweep_inclusive
+               OpBranch %downsweep_prefix_done
+%downsweep_exclusive = OpLabel
+               OpSelectionMerge %downsweep_exclusive_done None
+               OpBranchConditional %downsweep_has_previous %downsweep_previous %downsweep_exclusive_done
+%downsweep_previous = OpLabel
+%downsweep_previous_slot = OpAccessChain %shared_element_pointer %shared_values %downsweep_previous_lane
+%downsweep_previous_inclusive = OpLoad %@ELEMENT@ %downsweep_previous_slot NonPrivatePointer
+%downsweep_previous_value = OpFunctionCall %@ELEMENT@ %fiat_combine %downsweep_carry %downsweep_previous_inclusive
+               OpBranch %downsweep_exclusive_done
+%downsweep_exclusive_done = OpLabel
+%downsweep_exclusive_value = OpPhi %@ELEMENT@ %downsweep_previous_value %downsweep_previous %downsweep_carry %downsweep_exclusive
+               OpBranch %downsweep_prefix_done
+%downsweep_prefix_done = OpLabel
+%downsweep_prefix = OpPhi %@ELEMENT@ %downsweep_inclusive_value %downsweep_inclusive_prefix %downsweep_exclusive_value %downsweep_exclusive_done
+               OpSelectionMerge %downsweep_stored None
+               OpBranchConditional %downsweep_in_range %downsweep_store %downsweep_stored
+%downsweep_store = OpLabel
+%downsweep_final = OpFunctionCall %@ELEMENT@ %fiat_epilogue %downsweep_prefix
+%downsweep_output_pointer = OpPtrAccessChain %element_pointer %downsweep_output %downsweep_index
+               OpStore %downsweep_output_pointer %downsweep_final Aligned 4
+               OpBranch %downsweep_stored
+%downsweep_stored = OpLabel
+%downsweep_carry_next = OpFunctionCall %@ELEMENT@ %fiat_combine %downsweep_carry %downsweep_tile_total
+               OpBranch %downsweep_tile_continue
+%downsweep_tile_continue = OpLabel
+%downsweep_tile_next = OpIAdd %uint %downsweep_tile %one
+               OpBranch %downsweep_tile_header
+%downsweep_tile_exit = OpLabel
+               OpReturn
+               OpFunctionEnd

@@ -56,6 +56,24 @@ foreach(ELEMENT IN ITEMS float int uint)
     DEPENDS "${reduce_source}"
     VERBATIM)
   list(APPEND FIAT_TEMPLATE_OUTPUTS "${reduce_binary}")
+
+  foreach(MODE IN ITEMS inclusive exclusive)
+    if(MODE STREQUAL "exclusive")
+      set(SCAN_EXCLUSIVE OpConstantTrue)
+    else()
+      set(SCAN_EXCLUSIVE OpConstantFalse)
+    endif()
+    set(scan_source "${FIAT_TEMPLATE_DIR}/scan_${MODE}_${ELEMENT}.spvasm")
+    set(scan_binary "${FIAT_TEMPLATE_DIR}/scan_${MODE}_${ELEMENT}.spv")
+    configure_file(templates/scan.spvasm.in "${scan_source}" @ONLY)
+    add_custom_command(
+      OUTPUT "${scan_binary}"
+      COMMAND "${FIAT_SPIRV_AS}" --target-env spv1.6 -o "${scan_binary}" "${scan_source}"
+      COMMAND "${FIAT_SPIRV_VAL}" --target-env spv1.6 "${scan_binary}"
+      DEPENDS "${scan_source}"
+      VERBATIM)
+    list(APPEND FIAT_TEMPLATE_OUTPUTS "${scan_binary}")
+  endforeach()
 endforeach()
 add_custom_target(fiat_templates DEPENDS ${FIAT_TEMPLATE_OUTPUTS})
 add_dependencies(fiat fiat_templates)
