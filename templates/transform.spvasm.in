@@ -2,6 +2,9 @@
 ; Assembled with spirv-as --target-env spv1.6, validated with spirv-val --target-env spv1.6.
 ; The splicer replaces the Import declaration of %fiat_operation with the traced
 ; definition and removes OpCapability Linkage plus the LinkageAttributes decoration.
+; Invariant (one reader per element): an invocation reads global element i only if it is the
+; invocation that writes element i, and reads it before writing it; all cross-element data moves
+; through workgroup memory or the context scratch, so output may be the input (in place).
                OpCapability Shader
                OpCapability PhysicalStorageBufferAddresses
                OpCapability Int64

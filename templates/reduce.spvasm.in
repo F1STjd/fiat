@@ -7,6 +7,9 @@
 ; from an atomic counter (Device scope, AcquireRelease), and the workgroup with the last
 ; ticket combines the partials, writes the result and resets the counter to zero.
 ; Combine must be associative and commutative; identity is applied once per invocation.
+; Invariant (one reader per element): no invocation writes any input element; every
+; cross-element value moves through workgroup memory or the context scratch, so the input is
+; never aliased by an output and stays unchanged.
                OpCapability Shader
                OpCapability PhysicalStorageBufferAddresses
                OpCapability VulkanMemoryModel
