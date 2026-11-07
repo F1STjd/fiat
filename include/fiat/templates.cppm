@@ -37,6 +37,30 @@ inline constexpr auto reduce_uint_bytes = std::to_array<unsigned char>({
 #embed "reduce_uint.spv"
 });
 
+inline constexpr auto scan_inclusive_float_bytes = std::to_array<unsigned char>({
+#embed "scan_inclusive_float.spv"
+});
+
+inline constexpr auto scan_inclusive_int_bytes = std::to_array<unsigned char>({
+#embed "scan_inclusive_int.spv"
+});
+
+inline constexpr auto scan_inclusive_uint_bytes = std::to_array<unsigned char>({
+#embed "scan_inclusive_uint.spv"
+});
+
+inline constexpr auto scan_exclusive_float_bytes = std::to_array<unsigned char>({
+#embed "scan_exclusive_float.spv"
+});
+
+inline constexpr auto scan_exclusive_int_bytes = std::to_array<unsigned char>({
+#embed "scan_exclusive_int.spv"
+});
+
+inline constexpr auto scan_exclusive_uint_bytes = std::to_array<unsigned char>({
+#embed "scan_exclusive_uint.spv"
+});
+
 #if defined(__clang__)
   #pragma clang diagnostic pop
 #endif
@@ -71,12 +95,31 @@ inline constexpr auto reduce_float_words = assemble_words(reduce_float_bytes);
 inline constexpr auto reduce_int_words   = assemble_words(reduce_int_bytes);
 inline constexpr auto reduce_uint_words  = assemble_words(reduce_uint_bytes);
 
+inline constexpr auto scan_inclusive_float_words =
+  assemble_words(scan_inclusive_float_bytes);
+inline constexpr auto scan_inclusive_int_words =
+  assemble_words(scan_inclusive_int_bytes);
+inline constexpr auto scan_inclusive_uint_words =
+  assemble_words(scan_inclusive_uint_bytes);
+inline constexpr auto scan_exclusive_float_words =
+  assemble_words(scan_exclusive_float_bytes);
+inline constexpr auto scan_exclusive_int_words =
+  assemble_words(scan_exclusive_int_bytes);
+inline constexpr auto scan_exclusive_uint_words =
+  assemble_words(scan_exclusive_uint_bytes);
+
 static_assert(transform_float_words.front() == spirv::magic);
 static_assert(transform_int_words.front() == spirv::magic);
 static_assert(transform_uint_words.front() == spirv::magic);
 static_assert(reduce_float_words.front() == spirv::magic);
 static_assert(reduce_int_words.front() == spirv::magic);
 static_assert(reduce_uint_words.front() == spirv::magic);
+static_assert(scan_inclusive_float_words.front() == spirv::magic);
+static_assert(scan_inclusive_int_words.front() == spirv::magic);
+static_assert(scan_inclusive_uint_words.front() == spirv::magic);
+static_assert(scan_exclusive_float_words.front() == spirv::magic);
+static_assert(scan_exclusive_int_words.front() == spirv::magic);
+static_assert(scan_exclusive_uint_words.front() == spirv::magic);
 
 template<scalar Element>
 consteval
@@ -107,6 +150,49 @@ reduce_template() -> std::span<const std::uint32_t>
   else
   {
     return reduce_uint_words;
+  }
+}
+
+export enum class scan_mode : std::uint8_t
+{
+  inclusive,
+  exclusive,
+};
+
+template<scalar Element, scan_mode Mode>
+consteval
+auto
+scan_template() -> std::span<const std::uint32_t>
+{
+  if constexpr (Mode == scan_mode::inclusive)
+  {
+    if constexpr (std::same_as<Element, float>)
+    {
+      return scan_inclusive_float_words;
+    }
+    else if constexpr (std::same_as<Element, std::uint32_t>)
+    {
+      return scan_inclusive_uint_words;
+    }
+    else
+    {
+      return scan_inclusive_int_words;
+    }
+  }
+  else
+  {
+    if constexpr (std::same_as<Element, float>)
+    {
+      return scan_exclusive_float_words;
+    }
+    else if constexpr (std::same_as<Element, std::uint32_t>)
+    {
+      return scan_exclusive_uint_words;
+    }
+    else
+    {
+      return scan_exclusive_int_words;
+    }
   }
 }
 
