@@ -693,6 +693,7 @@ template<
 inline constexpr std::size_t scan_word_count =
   detail::scan_module<Element, Operation, Combine, Mode, Epilogue>().size();
 
+export
 template<
   scalar Element,
   class Operation,
@@ -719,7 +720,7 @@ compile(scan_stage<Operation, Combine, Identity, Mode, Epilogue>) -> std::array<
     std::uint32_t,
     scan_word_count<Element, Operation, Combine, Mode, Epilogue>
   >
-    result;
+    result {};
   std::ranges::copy(words, result.begin());
   return result;
 }
