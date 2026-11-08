@@ -680,7 +680,7 @@ scan_module() -> std::vector<std::uint32_t>
 
 } // namespace detail
 
-template<
+export template<
   scalar Element,
   class Operation,
   class Combine,
@@ -707,8 +707,7 @@ template<
     combinable<Combine, Element> &&
     std::same_as<Identity, Element> &&
     traceable<Epilogue, Element>)
-consteval
-auto
+consteval auto
 compile(scan_stage<Operation, Combine, Identity, Mode, Epilogue>) -> std::array<
   std::uint32_t,
   scan_word_count<Element, Operation, Combine, Mode, Epilogue>
