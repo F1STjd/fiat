@@ -69,7 +69,10 @@
       %three = OpConstant %uint 3
      %device = OpConstant %uint 1
   %workgroup = OpConstant %uint 2
-%semantics_workgroup = OpConstant %uint 264
+; 24840 = AcquireRelease | WorkgroupMemory | MakeAvailable | MakeVisible
+; 24904 also sets UniformMemory for the last-ticket handoff.
+%semantics_workgroup = OpConstant %uint 24840
+%semantics_handoff = OpConstant %uint 24904
 %semantics_device = OpConstant %uint 72
 %semantics_release = OpConstant %uint 68
  %group_size = OpSpecConstant %uint 256
@@ -184,7 +187,7 @@
                OpStore %shared_flag %flag_value NonPrivatePointer
                OpBranch %publish_done
 %publish_done = OpLabel
-               OpControlBarrier %workgroup %workgroup %semantics_workgroup
+               OpControlBarrier %workgroup %workgroup %semantics_handoff
        %flag = OpLoad %uint %shared_flag NonPrivatePointer
     %is_last = OpINotEqual %bool %flag %zero
                OpSelectionMerge %finish_done None
