@@ -306,7 +306,7 @@ bind_leaf(recorder& target, std::uint32_t id)
 template<soa_element Element, std::size_t... Indices>
 consteval
 auto
-bind_traced_struct_from(
+bind_traced_struct_impl(
   recorder&                                      target,
   std::span<const std::uint32_t, soa_leaf_limit> leaf_ids,
   std::index_sequence<Indices...>) -> traced_struct<Element>
@@ -323,14 +323,14 @@ bind_traced_struct(
   recorder& target, std::span<const std::uint32_t, soa_leaf_limit> leaf_ids)
   -> traced_struct<Element>
 {
-  return bind_traced_struct_from<Element>(
+  return bind_traced_struct_impl<Element>(
     target, leaf_ids, std::make_index_sequence<leaf_count_v<Element>> {});
 }
 
 template<class... Arguments, std::size_t... Slots>
 consteval
 auto
-bind_traced_arguments_from(
+bind_traced_arguments_impl(
   recorder& target,
   std::type_identity<std::tuple<Arguments...>>,
   std::index_sequence<Slots...>) -> std::tuple<value<Arguments>...>
@@ -350,7 +350,7 @@ bind_traced_arguments(
   recorder& target, std::type_identity<std::tuple<Arguments...>> identity)
   -> std::tuple<value<Arguments>...>
 {
-  return bind_traced_arguments_from(
+  return bind_traced_arguments_impl(
     target, identity, std::index_sequence_for<Arguments...> {});
 }
 
