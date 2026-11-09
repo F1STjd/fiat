@@ -2,7 +2,7 @@ file(TO_CMAKE_PATH "${CMAKE_CURRENT_BINARY_DIR}" _fiat_spv_output_dir)
 string(REPLACE "\\" "/" _fiat_spv_output_dir "${_fiat_spv_output_dir}")
 foreach(
   example IN ITEMS
-  multiply increment transform scale reduce transform_with)
+  multiply increment transform scale reduce transform_with scan selection)
   add_executable(fiat_${example} ${example}.cpp)
   target_link_libraries(fiat_${example} PRIVATE fiat::fiat)
   set_target_properties(fiat_${example} PROPERTIES CXX_MODULE_STD ON)
