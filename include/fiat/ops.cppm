@@ -97,4 +97,20 @@ export struct identity
   { return operand; }
 };
 
+export struct greater {};
+export struct greater_equal {};
+export struct less {};
+export struct less_equal {};
+export struct equal {};
+export struct not_equal {};
+
+export template<class Compare>
+concept compare_operation =
+  std::same_as<Compare, greater> ||
+  std::same_as<Compare, greater_equal> ||
+  std::same_as<Compare, less> ||
+  std::same_as<Compare, less_equal> ||
+  std::same_as<Compare, equal> ||
+  std::same_as<Compare, not_equal>;
+
 } // namespace fiat

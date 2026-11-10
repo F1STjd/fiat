@@ -97,6 +97,26 @@ static_assert(
   sizeof(detail::scan_push) == 128UZ,
   "fits the 128 bytes every Vulkan device guarantees");
 
+namespace detail
+{
+
+export struct scatter_push
+{
+  std::uint64_t input {};
+  std::uint64_t output {};
+  std::uint32_t count {};
+  std::uint32_t first {};
+  std::uint64_t flags {};
+  std::uint64_t indices {};
+  std::uint64_t count_out {};
+};
+
+} // namespace detail
+
+static_assert(
+  sizeof(detail::scatter_push) == 48UZ,
+  "fits the 128 bytes every Vulkan device guarantees");
+
 export inline constexpr std::string_view transform_entry {"fiat_transform"};
 export inline constexpr std::string_view reduce_entry {"fiat_reduce"};
 export inline constexpr std::string_view scan_upsweep_entry {
@@ -105,7 +125,9 @@ export inline constexpr std::string_view scan_upsweep_entry {
 export inline constexpr std::string_view scan_downsweep_entry {
   "fiat_scan_downsweep"
 };
-export inline constexpr std::uint32_t group_size_constant_id {};
+export inline constexpr std::uint32_t    group_size_constant_id {};
+export inline constexpr std::string_view predicate_entry {"fiat_predicate"};
+export inline constexpr std::string_view scatter_entry {"fiat_scatter"};
 
 export template<class Operation>
 struct transform_stage
@@ -139,6 +161,55 @@ struct scan_stage
   Identity                               identity {};
   typename arguments_of<Epilogue>::type  epilogue_arguments {};
 };
+
+export template<class Compare, class Threshold>
+struct predicate_stage
+{
+  Threshold threshold {};
+};
+
+export template<class Compare, class Threshold>
+struct compact_stage
+{
+  Threshold threshold {};
+};
+
+export struct scatter_stage {};
+
+export
+template<class Compare, class Threshold>
+constexpr auto
+predicate(Compare, Threshold threshold) -> predicate_stage<Compare, Threshold>
+{
+  static_assert(
+    compare_operation<Compare>,
+    "fiat::predicate compare must be greater, greater_equal, less, less_equal, "
+    "or not_equal");
+  static_assert(
+    scalar<Threshold>,
+    "fiat::predicate threshold must be float, std::int32_t or std::uint32_t");
+  return {.threshold = threshold};
+}
+
+export
+template<class Compare, class Threshold>
+constexpr auto
+compact(Compare, Threshold threshold) -> compact_stage<Compare, Threshold>
+{
+  static_assert(
+    compare_operation<Compare>,
+    "fiat::compact compare must be greater, greater_equal, less, less_equal, "
+    "or not_equal");
+  static_assert(
+    scalar<Threshold>,
+    "fiat::compact threshold must be float, std::int32_t or std::uint32_t");
+  return {.threshold = threshold};
+}
+
+export constexpr
+auto
+scatter() -> scatter_stage
+{ return {}; }
 
 export template<class Operation, class... Arguments>
 struct bound_operation
@@ -720,6 +791,158 @@ compile(scan_stage<Operation, Combine, Identity, Mode, Epilogue>) -> std::array<
     scan_word_count<Element, Operation, Combine, Mode, Epilogue>
   >
     result {};
+  std::ranges::copy(words, result.begin());
+  return result;
+}
+
+namespace detail
+{
+
+template<scalar Element, class Compare>
+  requires compare_operation<Compare>
+consteval
+auto
+predicate_words() -> std::span<const std::uint32_t>
+{
+  if constexpr (std::same_as<Compare, greater>)
+  {
+    if constexpr (std::same_as<Element, float>)
+    {
+      return predicate_greater_float_words;
+    }
+    else if constexpr (std::same_as<Element, std::int32_t>)
+    {
+      return predicate_greater_int_words;
+    }
+    else
+    {
+      return predicate_greater_uint_words;
+    }
+  }
+  else if constexpr (std::same_as<Compare, greater_equal>)
+  {
+    if constexpr (std::same_as<Element, float>)
+    {
+      return predicate_greater_equal_float_words;
+    }
+    else if constexpr (std::same_as<Element, std::int32_t>)
+    {
+      return predicate_greater_equal_int_words;
+    }
+    else
+    {
+      return predicate_greater_equal_uint_words;
+    }
+  }
+  else if constexpr (std::same_as<Compare, less>)
+  {
+    if constexpr (std::same_as<Element, float>)
+    {
+      return predicate_less_float_words;
+    }
+    else if constexpr (std::same_as<Element, std::int32_t>)
+    {
+      return predicate_less_int_words;
+    }
+    else
+    {
+      return predicate_less_uint_words;
+    }
+  }
+  else if constexpr (std::same_as<Compare, less_equal>)
+  {
+    if constexpr (std::same_as<Element, float>)
+    {
+      return predicate_less_equal_float_words;
+    }
+    else if constexpr (std::same_as<Element, std::int32_t>)
+    {
+      return predicate_less_equal_int_words;
+    }
+    else
+    {
+      return predicate_less_equal_uint_words;
+    }
+  }
+  else if constexpr (std::same_as<Compare, equal>)
+  {
+    if constexpr (std::same_as<Element, float>)
+    {
+      return predicate_equal_float_words;
+    }
+    else if constexpr (std::same_as<Element, std::int32_t>)
+    {
+      return predicate_equal_int_words;
+    }
+    else
+    {
+      return predicate_equal_uint_words;
+    }
+  }
+  else if constexpr (std::same_as<Compare, not_equal>)
+  {
+    if constexpr (std::same_as<Element, float>)
+    {
+      return predicate_not_equal_float_words;
+    }
+    else if constexpr (std::same_as<Element, std::int32_t>)
+    {
+      return predicate_not_equal_int_words;
+    }
+    else
+    {
+      return predicate_not_equal_uint_words;
+    }
+  }
+}
+
+template<scalar Element>
+consteval
+auto
+scatter_words() -> std::span<const std::uint32_t>
+{
+  if constexpr (std::same_as<Element, float>) { return scatter_float_words; }
+  else if constexpr (std::same_as<Element, std::int32_t>)
+  {
+    return scatter_int_words;
+  }
+  else
+  {
+    return scatter_uint_words;
+  }
+}
+
+} // namespace detail
+
+export template<scalar Element, class Compare>
+  requires compare_operation<Compare>
+inline constexpr std::size_t predicate_word_count =
+  detail::predicate_words<Element, Compare>().size();
+
+export
+template<scalar Element, class Compare, class Threshold>
+  requires (compare_operation<Compare> && std::same_as<Threshold, Element>)
+consteval auto
+compile(predicate_stage<Compare, Threshold>)
+  -> std::array<std::uint32_t, predicate_word_count<Element, Compare>>
+{
+  auto words = detail::predicate_words<Element, Compare>();
+  std::array<std::uint32_t, predicate_word_count<Element, Compare>> result {};
+  std::ranges::copy(words, result.begin());
+  return result;
+}
+
+export template<scalar Element>
+inline constexpr std::size_t scatter_word_count =
+  detail::scatter_words<Element>().size();
+
+export
+template<scalar Element>
+consteval auto
+compile(scatter_stage) -> std::array<std::uint32_t, scatter_word_count<Element>>
+{
+  auto words = detail::scatter_words<Element>();
+  std::array<std::uint32_t, scatter_word_count<Element>> result {};
   std::ranges::copy(words, result.begin());
   return result;
 }

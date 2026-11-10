@@ -61,10 +61,93 @@ inline constexpr auto scan_exclusive_uint_bytes = std::to_array<unsigned char>({
 #embed "scan_exclusive_uint.spv"
 });
 
+inline constexpr auto predicate_greater_float_bytes = std::to_array<unsigned char>({
+#embed "predicate_greater_float.spv"
+});
+
+inline constexpr auto predicate_greater_int_bytes = std::to_array<unsigned char>({
+#embed "predicate_greater_int.spv"
+});
+
+inline constexpr auto predicate_greater_uint_bytes = std::to_array<unsigned char>({
+#embed "predicate_greater_uint.spv"
+});
+
+inline constexpr auto predicate_greater_equal_float_bytes = std::to_array<unsigned char>({
+#embed "predicate_greater_equal_float.spv"
+});
+
+inline constexpr auto predicate_greater_equal_int_bytes = std::to_array<unsigned char>({
+#embed "predicate_greater_equal_int.spv"
+});
+
+inline constexpr auto predicate_greater_equal_uint_bytes = std::to_array<unsigned char>({
+#embed "predicate_greater_equal_uint.spv"
+});
+
+inline constexpr auto predicate_less_float_bytes = std::to_array<unsigned char>({
+#embed "predicate_less_float.spv"
+});
+
+inline constexpr auto predicate_less_int_bytes = std::to_array<unsigned char>({
+#embed "predicate_less_int.spv"
+});
+
+inline constexpr auto predicate_less_uint_bytes = std::to_array<unsigned char>({
+#embed "predicate_less_uint.spv"
+});
+
+inline constexpr auto predicate_less_equal_float_bytes = std::to_array<unsigned char>({
+#embed "predicate_less_equal_float.spv"
+});
+
+inline constexpr auto predicate_less_equal_int_bytes = std::to_array<unsigned char>({
+#embed "predicate_less_equal_int.spv"
+});
+
+inline constexpr auto predicate_less_equal_uint_bytes = std::to_array<unsigned char>({
+#embed "predicate_less_equal_uint.spv"
+});
+
+inline constexpr auto predicate_equal_float_bytes = std::to_array<unsigned char>({
+#embed "predicate_equal_float.spv"
+});
+
+inline constexpr auto predicate_equal_int_bytes = std::to_array<unsigned char>({
+#embed "predicate_equal_int.spv"
+});
+
+inline constexpr auto predicate_equal_uint_bytes = std::to_array<unsigned char>({
+#embed "predicate_equal_uint.spv"
+});
+
+inline constexpr auto predicate_not_equal_float_bytes = std::to_array<unsigned char>({
+#embed "predicate_not_equal_float.spv"
+});
+
+inline constexpr auto predicate_not_equal_int_bytes = std::to_array<unsigned char>({
+#embed "predicate_not_equal_int.spv"
+});
+
+inline constexpr auto predicate_not_equal_uint_bytes = std::to_array<unsigned char>({
+#embed "predicate_not_equal_uint.spv"
+});
+
+inline constexpr auto scatter_float_bytes = std::to_array<unsigned char>({
+#embed "scatter_float.spv"
+});
+
+inline constexpr auto scatter_int_bytes = std::to_array<unsigned char>({
+#embed "scatter_int.spv"
+});
+
+inline constexpr auto scatter_uint_bytes = std::to_array<unsigned char>({
+#embed "scatter_uint.spv"
+});
+
 #if defined(__clang__)
   #pragma clang diagnostic pop
 #endif
-
 template<std::size_t Size>
   requires (Size % sizeof(std::uint32_t) == 0UZ)
 consteval
@@ -108,18 +191,82 @@ inline constexpr auto scan_exclusive_int_words =
 inline constexpr auto scan_exclusive_uint_words =
   assemble_words(scan_exclusive_uint_bytes);
 
+inline constexpr auto predicate_greater_float_words =
+  assemble_words(predicate_greater_float_bytes);
+inline constexpr auto predicate_greater_int_words =
+  assemble_words(predicate_greater_int_bytes);
+inline constexpr auto predicate_greater_uint_words =
+  assemble_words(predicate_greater_uint_bytes);
+inline constexpr auto predicate_greater_equal_float_words =
+  assemble_words(predicate_greater_equal_float_bytes);
+inline constexpr auto predicate_greater_equal_int_words =
+  assemble_words(predicate_greater_equal_int_bytes);
+inline constexpr auto predicate_greater_equal_uint_words =
+  assemble_words(predicate_greater_equal_uint_bytes);
+inline constexpr auto predicate_less_float_words =
+  assemble_words(predicate_less_float_bytes);
+inline constexpr auto predicate_less_int_words =
+  assemble_words(predicate_less_int_bytes);
+inline constexpr auto predicate_less_uint_words =
+  assemble_words(predicate_less_uint_bytes);
+inline constexpr auto predicate_less_equal_float_words =
+  assemble_words(predicate_less_equal_float_bytes);
+inline constexpr auto predicate_less_equal_int_words =
+  assemble_words(predicate_less_equal_int_bytes);
+inline constexpr auto predicate_less_equal_uint_words =
+  assemble_words(predicate_less_equal_uint_bytes);
+inline constexpr auto predicate_equal_float_words =
+  assemble_words(predicate_equal_float_bytes);
+inline constexpr auto predicate_equal_int_words =
+  assemble_words(predicate_equal_int_bytes);
+inline constexpr auto predicate_equal_uint_words =
+  assemble_words(predicate_equal_uint_bytes);
+inline constexpr auto predicate_not_equal_float_words =
+  assemble_words(predicate_not_equal_float_bytes);
+inline constexpr auto predicate_not_equal_int_words =
+  assemble_words(predicate_not_equal_int_bytes);
+inline constexpr auto predicate_not_equal_uint_words =
+  assemble_words(predicate_not_equal_uint_bytes);
+inline constexpr auto scatter_float_words = assemble_words(scatter_float_bytes);
+inline constexpr auto scatter_int_words   = assemble_words(scatter_int_bytes);
+inline constexpr auto scatter_uint_words  = assemble_words(scatter_uint_bytes);
+
 static_assert(transform_float_words.front() == spirv::magic);
 static_assert(transform_int_words.front() == spirv::magic);
 static_assert(transform_uint_words.front() == spirv::magic);
+
 static_assert(reduce_float_words.front() == spirv::magic);
 static_assert(reduce_int_words.front() == spirv::magic);
 static_assert(reduce_uint_words.front() == spirv::magic);
+
 static_assert(scan_inclusive_float_words.front() == spirv::magic);
 static_assert(scan_inclusive_int_words.front() == spirv::magic);
 static_assert(scan_inclusive_uint_words.front() == spirv::magic);
 static_assert(scan_exclusive_float_words.front() == spirv::magic);
 static_assert(scan_exclusive_int_words.front() == spirv::magic);
 static_assert(scan_exclusive_uint_words.front() == spirv::magic);
+
+static_assert(predicate_greater_float_words.front() == spirv::magic);
+static_assert(predicate_greater_int_words.front() == spirv::magic);
+static_assert(predicate_greater_uint_words.front() == spirv::magic);
+static_assert(predicate_greater_equal_float_words.front() == spirv::magic);
+static_assert(predicate_greater_equal_int_words.front() == spirv::magic);
+static_assert(predicate_greater_equal_uint_words.front() == spirv::magic);
+static_assert(predicate_less_float_words.front() == spirv::magic);
+static_assert(predicate_less_int_words.front() == spirv::magic);
+static_assert(predicate_less_uint_words.front() == spirv::magic);
+static_assert(predicate_less_equal_float_words.front() == spirv::magic);
+static_assert(predicate_less_equal_int_words.front() == spirv::magic);
+static_assert(predicate_less_equal_uint_words.front() == spirv::magic);
+static_assert(predicate_equal_float_words.front() == spirv::magic);
+static_assert(predicate_equal_int_words.front() == spirv::magic);
+static_assert(predicate_equal_uint_words.front() == spirv::magic);
+static_assert(predicate_not_equal_float_words.front() == spirv::magic);
+static_assert(predicate_not_equal_int_words.front() == spirv::magic);
+static_assert(predicate_not_equal_uint_words.front() == spirv::magic);
+static_assert(scatter_float_words.front() == spirv::magic);
+static_assert(scatter_int_words.front() == spirv::magic);
+static_assert(scatter_uint_words.front() == spirv::magic);
 
 template<scalar Element>
 consteval

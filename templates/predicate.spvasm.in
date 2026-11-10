@@ -1,0 +1,82 @@
+; fiat predicate template (SC1). @ELEMENT@ = float | int | uint.
+; @COMPARE_OP@ = a SPIR-V compare opcode.
+; @THRESHOLD_FROM_BITS@ = OpBitcast %@ELEMENT@ %threshold_bits, or
+; OpCopyObject %uint %threshold_bits when @ELEMENT@ is uint.
+; Assembled with spirv-as --target-env spv1.6, validated with spirv-val --target-env spv1.6.
+; Complete kernel (no Linkage). Writes flags[i] as uint: 1 when
+; @COMPARE_OP@(input[i], threshold) is true, else 0. Threshold is push.arguments[0].
+; Invariant (one reader per element): an invocation reads global element i only if it is the
+; invocation that writes flags[i], and reads it before writing it.
+               OpCapability Shader
+               OpCapability PhysicalStorageBufferAddresses
+               OpCapability Int64
+               OpMemoryModel PhysicalStorageBuffer64 GLSL450
+               OpEntryPoint GLCompute %main "fiat_predicate" %global_id %push
+               OpExecutionModeId %main LocalSizeId %group_size %one %one
+               OpDecorate %global_id BuiltIn GlobalInvocationId
+               OpDecorate %group_size SpecId 0
+               OpDecorate %element_pointer ArrayStride 4
+               OpDecorate %flag_pointer ArrayStride 4
+               OpDecorate %argument_array ArrayStride 4
+               OpDecorate %push_type Block
+               OpMemberDecorate %push_type 0 Offset 0
+               OpMemberDecorate %push_type 1 Offset 8
+               OpMemberDecorate %push_type 2 Offset 16
+               OpMemberDecorate %push_type 3 Offset 20
+               OpMemberDecorate %push_type 4 Offset 24
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+      %float = OpTypeFloat 32
+        %int = OpTypeInt 32 1
+       %uint = OpTypeInt 32 0
+      %ulong = OpTypeInt 64 0
+%argument_count = OpConstant %uint 26
+%argument_array = OpTypeArray %uint %argument_count
+     %uint_3 = OpTypeVector %uint 3
+%element_pointer = OpTypePointer PhysicalStorageBuffer %@ELEMENT@
+%flag_pointer = OpTypePointer PhysicalStorageBuffer %uint
+  %push_type = OpTypeStruct %element_pointer %flag_pointer %uint %uint %argument_array
+%push_pointer = OpTypePointer PushConstant %push_type
+%push_element_pointer = OpTypePointer PushConstant %element_pointer
+%push_flag_pointer = OpTypePointer PushConstant %flag_pointer
+%push_uint_pointer = OpTypePointer PushConstant %uint
+%input_uint_3_pointer = OpTypePointer Input %uint_3
+%main_type = OpTypeFunction %void
+       %zero = OpConstant %uint 0
+        %one = OpConstant %uint 1
+        %two = OpConstant %uint 2
+      %three = OpConstant %uint 3
+       %four = OpConstant %uint 4
+ %group_size = OpSpecConstant %uint 256
+  %global_id = OpVariable %input_uint_3_pointer Input
+       %push = OpVariable %push_pointer PushConstant
+       %main = OpFunction %void None %main_type
+      %entry = OpLabel
+ %invocation = OpLoad %uint_3 %global_id
+ %invocation_x = OpCompositeExtract %uint %invocation 0
+%first_member = OpAccessChain %push_uint_pointer %push %three
+      %first = OpLoad %uint %first_member
+      %index = OpIAdd %uint %first %invocation_x
+%count_member = OpAccessChain %push_uint_pointer %push %two
+      %count = OpLoad %uint %count_member
+   %in_range = OpULessThan %bool %index %count
+               OpSelectionMerge %done None
+               OpBranchConditional %in_range %body %done
+       %body = OpLabel
+%input_member = OpAccessChain %push_element_pointer %push %zero
+      %input = OpLoad %element_pointer %input_member
+%flags_member = OpAccessChain %push_flag_pointer %push %one
+      %flags = OpLoad %flag_pointer %flags_member
+%threshold_member = OpAccessChain %push_uint_pointer %push %four %zero
+%threshold_bits = OpLoad %uint %threshold_member
+ %threshold = @THRESHOLD_FROM_BITS@
+%input_element = OpPtrAccessChain %element_pointer %input %index
+     %source = OpLoad %@ELEMENT@ %input_element Aligned 4
+      %keep = @COMPARE_OP@ %bool %source %threshold
+      %flag = OpSelect %uint %keep %one %zero
+%flags_element = OpPtrAccessChain %flag_pointer %flags %index
+               OpStore %flags_element %flag Aligned 4
+               OpBranch %done
+       %done = OpLabel
+               OpReturn
+               OpFunctionEnd
