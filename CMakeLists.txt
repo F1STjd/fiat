@@ -156,6 +156,20 @@ add_custom_command(
   DEPENDS "${histogram_source}"
   VERBATIM)
 list(APPEND FIAT_TEMPLATE_OUTPUTS "${histogram_binary}")
+
+foreach(TEMPLATE IN ITEMS tile_histogram stable_scatter)
+  set(source "${FIAT_TEMPLATE_DIR}/${TEMPLATE}_uint.spvasm")
+  set(binary "${FIAT_TEMPLATE_DIR}/${TEMPLATE}_uint.spv")
+  configure_file(templates/${TEMPLATE}.spvasm.in "${source}" @ONLY)
+  add_custom_command(
+    OUTPUT "${binary}"
+    COMMAND "${FIAT_SPIRV_AS}" --target-env spv1.6 -o "${binary}" "${source}"
+    COMMAND "${FIAT_SPIRV_VAL}" --target-env spv1.6 "${binary}"
+    DEPENDS "${source}"
+    VERBATIM)
+  list(APPEND FIAT_TEMPLATE_OUTPUTS "${binary}")
+endforeach()
+
 add_custom_target(fiat_templates DEPENDS ${FIAT_TEMPLATE_OUTPUTS})
 add_dependencies(fiat fiat_templates)
 

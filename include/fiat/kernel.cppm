@@ -139,6 +139,61 @@ static_assert(
   sizeof(detail::histogram_push) == 128UZ,
   "fits the 128 bytes every Vulkan device guarantees");
 
+export inline constexpr std::size_t stable_scatter_argument_capacity {20UZ};
+
+static_assert(
+  stable_scatter_argument_capacity == 20UZ,
+  "leaves 24 bytes after member 4 for scanned and the two value pointers");
+
+namespace detail
+{
+
+export struct tile_histogram_push
+{
+  std::uint64_t                                input {};
+  std::uint64_t                                histogram {};
+  std::uint32_t                                count {};
+  std::uint32_t                                first {};
+  std::array<std::uint32_t, argument_capacity> arguments {};
+};
+
+} // namespace detail
+
+static_assert(
+  sizeof(detail::tile_histogram_push) ==
+    detail::argument_offset + argument_capacity * sizeof(std::uint32_t),
+  "matches the tile-histogram template push block");
+static_assert(
+  sizeof(detail::tile_histogram_push) == 128UZ,
+  "fits the 128 bytes every Vulkan device guarantees");
+
+namespace detail
+{
+
+export struct stable_scatter_push
+{
+  std::uint64_t                                               input_keys {};
+  std::uint64_t                                               output_keys {};
+  std::uint32_t                                               count {};
+  std::uint32_t                                               first {};
+  std::array<std::uint32_t, stable_scatter_argument_capacity> arguments {};
+  std::uint64_t                                               scanned {};
+  std::uint64_t                                               input_values {};
+  std::uint64_t                                               output_values {};
+};
+
+} // namespace detail
+
+static_assert(
+  sizeof(detail::stable_scatter_push) ==
+    detail::argument_offset +
+      stable_scatter_argument_capacity * sizeof(std::uint32_t) +
+      24UZ,
+  "matches the stable-scatter template push block");
+static_assert(
+  sizeof(detail::stable_scatter_push) == 128UZ,
+  "fits the 128 bytes every Vulkan device guarantees");
+
 export inline constexpr std::string_view transform_entry {"fiat_transform"};
 
 export inline constexpr std::string_view reduce_entry {"fiat_reduce"};
@@ -160,6 +215,17 @@ export inline constexpr std::string_view histogram_global_entry {
   "fiat_histogram_global"
 };
 export inline constexpr std::uint32_t buckets_constant_id {1U};
+
+export inline constexpr std::string_view tile_histogram_entry {
+  "fiat_tile_histogram"
+};
+
+export inline constexpr std::string_view stable_scatter_entry {
+  "fiat_stable_scatter"
+};
+export inline constexpr std::string_view stable_scatter_pairs_entry {
+  "fiat_stable_scatter_pairs"
+};
 
 export template<class Operation>
 struct transform_stage
@@ -293,6 +359,113 @@ histogram(Key, Arguments... arguments) -> histogram_stage<Buckets, Mode, Key>
     traceable<Key, std::uint32_t>,
     "fiat::histogram key must be traceable on std::uint32_t");
   return {.arguments = {arguments...}};
+}
+
+export template<std::uint32_t Buckets, class Key>
+struct tile_histogram_stage
+{
+  static constexpr std::uint32_t buckets {Buckets};
+  using key_type = Key;
+  typename arguments_of<Key>::type arguments {};
+};
+
+export
+template<std::uint32_t Buckets, class Key, class... Arguments>
+constexpr auto
+tile_histogram(Key, Arguments... arguments)
+  -> tile_histogram_stage<Buckets, Key>
+{
+  static_assert(
+    Buckets >= 1U, "fiat::tile_histogram needs at least one bucket");
+  static_assert(
+    std::is_empty_v<Key> && std::default_initializable<Key>,
+    "fiat::tile_histogram cannot read lambda captures; pass runtime values as "
+    "arguments: fiat::tile_histogram<Buckets>(key, value)");
+  static_assert(
+    (scalar<Arguments> && ...),
+    "fiat::tile_histogram arguments must be float, std::int32_t or "
+    "std::uint32_t");
+  static_assert(
+    sizeof...(Arguments) <= argument_capacity,
+    "fiat::tile_histogram takes at most 26 runtime arguments");
+  static_assert(
+    std::same_as<std::tuple<Arguments...>, typename arguments_of<Key>::type>,
+    "fiat::tile_histogram arguments must match the key");
+  if constexpr (requires { Key::bits; })
+  {
+    static_assert(
+      Key::bits >= 1U && Key::bits <= 8U,
+      "fiat::tile_histogram bits must be between 1 and 8");
+    static_assert(
+      Buckets == (Key::bits <= 8U ? (1U << Key::bits) : 0U),
+      "fiat::tile_histogram buckets must equal 1U << bits");
+  }
+  static_assert(
+    traceable<Key, std::uint32_t>,
+    "fiat::tile_histogram key must be traceable on std::uint32_t");
+  return {.arguments = {arguments...}};
+}
+
+export template<std::uint32_t Buckets, class Key>
+struct stable_scatter_stage
+{
+  static constexpr std::uint32_t buckets {Buckets};
+  using key_type = Key;
+  typename arguments_of<Key>::type arguments {};
+};
+
+export
+template<std::uint32_t Buckets, class Key, class... Arguments>
+constexpr auto
+stable_scatter(Key, Arguments... arguments)
+  -> stable_scatter_stage<Buckets, Key>
+{
+  static_assert(
+    Buckets >= 1U, "fiat::stable_scatter needs at least one bucket");
+  static_assert(
+    std::is_empty_v<Key> && std::default_initializable<Key>,
+    "fiat::stable_scatter cannot read lambda captures; pass runtime values as "
+    "arguments: fiat::stable_scatter<Buckets>(key, value)");
+  static_assert(
+    (scalar<Arguments> && ...),
+    "fiat::stable_scatter arguments must be float, std::int32_t or "
+    "std::uint32_t");
+  static_assert(
+    sizeof...(Arguments) <= stable_scatter_argument_capacity,
+    "fiat::stable_scatter takes at most 20 runtime arguments");
+  static_assert(
+    std::same_as<std::tuple<Arguments...>, typename arguments_of<Key>::type>,
+    "fiat::stable_scatter arguments must match the key");
+  if constexpr (requires { Key::bits; })
+  {
+    static_assert(
+      Key::bits >= 1U && Key::bits <= 8U,
+      "fiat::stable_scatter bits must be between 1 and 8");
+    static_assert(
+      Buckets == (Key::bits <= 8U ? (1U << Key::bits) : 0U),
+      "fiat::stable_scatter buckets must equal 1U << bits");
+  }
+  static_assert(
+    traceable<Key, std::uint32_t>,
+    "fiat::stable_scatter key must be traceable on std::uint32_t");
+  return {.arguments = {arguments...}};
+}
+
+export template<std::uint32_t Bits = 8U>
+struct radix_sort_stage
+{
+  static constexpr std::uint32_t bits {Bits};
+  static constexpr std::uint32_t buckets {1U << Bits};
+};
+
+export
+template<std::uint32_t Bits = 8U>
+constexpr auto
+radix_sort() -> radix_sort_stage<Bits>
+{
+  static_assert(
+    Bits >= 1U && Bits <= 8U, "fiat::radix_sort bits must be between 1 and 8");
+  return {};
 }
 
 export template<class Operation, class... Arguments>
@@ -1067,6 +1240,81 @@ compile(histogram_stage<Buckets, Mode, Key>)
 {
   const auto words = detail::histogram_module<Key>();
   std::array<std::uint32_t, histogram_word_count<Key>> result {};
+  std::ranges::copy(words, result.begin());
+  return result;
+}
+
+namespace detail
+{
+
+template<class Key>
+  requires traceable<Key, std::uint32_t>
+constexpr
+auto
+tile_histogram_module() -> std::vector<std::uint32_t>
+{
+  const auto instructions = trace<std::uint32_t, Key>();
+  return splice<std::uint32_t>(
+    tile_histogram_template(),
+    std::array {
+      symbol_trace {key_symbol, instructions},
+    });
+}
+
+template<class Key>
+  requires traceable<Key, std::uint32_t>
+constexpr
+auto
+stable_scatter_module() -> std::vector<std::uint32_t>
+{
+  const auto instructions = trace<std::uint32_t, Key>();
+  return splice<std::uint32_t>(
+    stable_scatter_template(),
+    std::array {
+      symbol_trace {key_symbol, instructions},
+    });
+}
+
+} // namespace detail
+
+export template<class Key>
+  requires traceable<Key, std::uint32_t>
+inline constexpr std::size_t tile_histogram_word_count =
+  detail::tile_histogram_module<Key>().size();
+
+export
+template<scalar Element, std::uint32_t Buckets, class Key>
+  requires (
+    std::same_as<Element, std::uint32_t> &&
+    traceable<Key, Element> &&
+    (Buckets >= 1U))
+consteval auto
+compile(tile_histogram_stage<Buckets, Key>)
+  -> std::array<std::uint32_t, tile_histogram_word_count<Key>>
+{
+  const auto words = detail::tile_histogram_module<Key>();
+  std::array<std::uint32_t, tile_histogram_word_count<Key>> result {};
+  std::ranges::copy(words, result.begin());
+  return result;
+}
+
+export template<class Key>
+  requires traceable<Key, std::uint32_t>
+inline constexpr std::size_t stable_scatter_word_count =
+  detail::stable_scatter_module<Key>().size();
+
+export
+template<scalar Element, std::uint32_t Buckets, class Key>
+  requires (
+    std::same_as<Element, std::uint32_t> &&
+    traceable<Key, Element> &&
+    (Buckets >= 1U))
+consteval auto
+compile(stable_scatter_stage<Buckets, Key>)
+  -> std::array<std::uint32_t, stable_scatter_word_count<Key>>
+{
+  const auto words = detail::stable_scatter_module<Key>();
+  std::array<std::uint32_t, stable_scatter_word_count<Key>> result {};
   std::ranges::copy(words, result.begin());
   return result;
 }

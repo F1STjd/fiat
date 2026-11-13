@@ -1,0 +1,255 @@
+; fiat stable digit-scatter template (RS1). uint keys (and optional uint values).
+; Assembled with spirv-as --target-env spv1.6, validated with spirv-val --target-env spv1.6.
+; The splicer replaces the Import declaration of %fiat_key (uint -> uint) with the
+; traced definition, and removes OpCapability Linkage plus the LinkageAttributes decorations.
+; Two entry points share the module: fiat_stable_scatter (keys only) and
+; fiat_stable_scatter_pairs (keys and values, same destinations). Group size is
+; SpecId 0; bucket count is SpecId 1. After a 24840 barrier, each lane counts
+; earlier shared digits (lid_j < lid) for its local rank. Destination is
+; scanned[d * G + w] + rank. G = ceil(count / group_size).
+; w = first / group_size + WorkgroupId.x. Out-of-range lanes store a sentinel
+; (buckets) in shared so they do not contribute to any rank.
+; Invariant (one reader per element): an invocation reads input[i] (and
+; values[i]) only to write output[dest] (and out_values[dest]); those are
+; different buffers.
+               OpCapability Shader
+               OpCapability PhysicalStorageBufferAddresses
+               OpCapability VulkanMemoryModel
+               OpCapability VulkanMemoryModelDeviceScope
+               OpCapability Int64
+               OpCapability Linkage
+       %glsl = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel PhysicalStorageBuffer64 Vulkan
+               OpEntryPoint GLCompute %scatter "fiat_stable_scatter" %global_id %local_id %group_id %push %shared_digits
+               OpEntryPoint GLCompute %pairs "fiat_stable_scatter_pairs" %global_id %local_id %group_id %push %shared_digits
+               OpExecutionModeId %scatter LocalSizeId %group_size %one %one
+               OpExecutionModeId %pairs LocalSizeId %group_size %one %one
+               OpDecorate %fiat_key LinkageAttributes "fiat_key" Import
+               OpDecorate %global_id BuiltIn GlobalInvocationId
+               OpDecorate %local_id BuiltIn LocalInvocationId
+               OpDecorate %group_id BuiltIn WorkgroupId
+               OpDecorate %group_size SpecId 0
+               OpDecorate %buckets SpecId 1
+               OpDecorate %element_pointer ArrayStride 4
+               OpDecorate %argument_array ArrayStride 4
+               OpDecorate %push_type Block
+               OpMemberDecorate %push_type 0 Offset 0
+               OpMemberDecorate %push_type 1 Offset 8
+               OpMemberDecorate %push_type 2 Offset 16
+               OpMemberDecorate %push_type 3 Offset 20
+               OpMemberDecorate %push_type 4 Offset 24
+               OpMemberDecorate %push_type 5 Offset 104
+               OpMemberDecorate %push_type 6 Offset 112
+               OpMemberDecorate %push_type 7 Offset 120
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+       %uint = OpTypeInt 32 0
+      %ulong = OpTypeInt 64 0
+%argument_count = OpConstant %uint 20
+%argument_array = OpTypeArray %uint %argument_count
+     %uint_3 = OpTypeVector %uint 3
+%element_pointer = OpTypePointer PhysicalStorageBuffer %uint
+  %push_type = OpTypeStruct %element_pointer %element_pointer %uint %uint %argument_array %element_pointer %element_pointer %element_pointer
+%push_pointer = OpTypePointer PushConstant %push_type
+%push_element_pointer = OpTypePointer PushConstant %element_pointer
+%push_uint_pointer = OpTypePointer PushConstant %uint
+%input_uint_3_pointer = OpTypePointer Input %uint_3
+%main_type = OpTypeFunction %void
+   %key_type = OpTypeFunction %uint %uint
+       %zero = OpConstant %uint 0
+        %one = OpConstant %uint 1
+        %two = OpConstant %uint 2
+      %three = OpConstant %uint 3
+       %five = OpConstant %uint 5
+        %six = OpConstant %uint 6
+      %seven = OpConstant %uint 7
+  %workgroup = OpConstant %uint 2
+; 24840 = AcquireRelease | WorkgroupMemory | MakeAvailable | MakeVisible
+%semantics_workgroup = OpConstant %uint 24840
+ %group_size = OpSpecConstant %uint 256
+    %buckets = OpSpecConstant %uint 256
+%shared_array = OpTypeArray %uint %group_size
+%shared_array_pointer = OpTypePointer Workgroup %shared_array
+%shared_uint_pointer = OpTypePointer Workgroup %uint
+  %global_id = OpVariable %input_uint_3_pointer Input
+   %local_id = OpVariable %input_uint_3_pointer Input
+   %group_id = OpVariable %input_uint_3_pointer Input
+       %push = OpVariable %push_pointer PushConstant
+%shared_digits = OpVariable %shared_array_pointer Workgroup
+    %fiat_key = OpFunction %uint None %key_type
+%key_parameter = OpFunctionParameter %uint
+               OpFunctionEnd
+    %scatter = OpFunction %void None %main_type
+  %sc_entry = OpLabel
+  %local_vec = OpLoad %uint_3 %local_id
+      %local = OpCompositeExtract %uint %local_vec 0
+ %global_vec = OpLoad %uint_3 %global_id
+   %global_x = OpCompositeExtract %uint %global_vec 0
+  %group_vec = OpLoad %uint_3 %group_id
+    %group_x = OpCompositeExtract %uint %group_vec 0
+%first_member = OpAccessChain %push_uint_pointer %push %three
+      %first = OpLoad %uint %first_member
+%count_member = OpAccessChain %push_uint_pointer %push %two
+      %count = OpLoad %uint %count_member
+%input_member = OpAccessChain %push_element_pointer %push %zero
+      %input = OpLoad %element_pointer %input_member
+%output_member = OpAccessChain %push_element_pointer %push %one
+     %output = OpLoad %element_pointer %output_member
+%scanned_member = OpAccessChain %push_element_pointer %push %five
+    %scanned = OpLoad %element_pointer %scanned_member
+%group_base = OpUDiv %uint %first %group_size
+         %w = OpIAdd %uint %group_base %group_x
+%gs_minus_1 = OpISub %uint %group_size %one
+   %g_round = OpIAdd %uint %count %gs_minus_1
+         %G = OpUDiv %uint %g_round %group_size
+      %index = OpIAdd %uint %first %global_x
+   %in_range = OpULessThan %bool %index %count
+               OpSelectionMerge %after_store None
+               OpBranchConditional %in_range %store_digit %store_sentinel
+%store_digit = OpLabel
+ %source_ptr = OpPtrAccessChain %element_pointer %input %index
+     %source = OpLoad %uint %source_ptr Aligned 4
+     %bucket = OpFunctionCall %uint %fiat_key %source
+ %in_buckets = OpULessThan %bool %bucket %buckets
+    %stored = OpSelect %uint %in_buckets %bucket %buckets
+  %digit_ptr = OpAccessChain %shared_uint_pointer %shared_digits %local
+               OpStore %digit_ptr %stored NonPrivatePointer
+               OpBranch %after_store
+%store_sentinel = OpLabel
+%sentinel_ptr = OpAccessChain %shared_uint_pointer %shared_digits %local
+               OpStore %sentinel_ptr %buckets NonPrivatePointer
+               OpBranch %after_store
+%after_store = OpLabel
+               OpControlBarrier %workgroup %workgroup %semantics_workgroup
+               OpSelectionMerge %sc_done None
+               OpBranchConditional %in_range %scatter_body %sc_done
+%scatter_body = OpLabel
+ %key_ptr = OpPtrAccessChain %element_pointer %input %index
+       %key = OpLoad %uint %key_ptr Aligned 4
+         %d = OpFunctionCall %uint %fiat_key %key
+    %d_ok = OpULessThan %bool %d %buckets
+               OpSelectionMerge %after_write None
+               OpBranchConditional %d_ok %rank_setup %after_write
+ %rank_setup = OpLabel
+               OpBranch %rank_header
+%rank_header = OpLabel
+         %j = OpPhi %uint %zero %rank_setup %j_next %rank_continue
+      %rank = OpPhi %uint %zero %rank_setup %rank_next %rank_continue
+  %rank_more = OpULessThan %bool %j %local
+               OpLoopMerge %rank_done %rank_continue None
+               OpBranchConditional %rank_more %rank_body %rank_done
+  %rank_body = OpLabel
+      %j_ptr = OpAccessChain %shared_uint_pointer %shared_digits %j
+        %jd = OpLoad %uint %j_ptr NonPrivatePointer
+      %same = OpIEqual %bool %jd %d
+       %add = OpSelect %uint %same %one %zero
+  %rank_next = OpIAdd %uint %rank %add
+     %j_next = OpIAdd %uint %j %one
+               OpBranch %rank_continue
+%rank_continue = OpLabel
+               OpBranch %rank_header
+  %rank_done = OpLabel
+  %scan_base = OpIMul %uint %d %G
+ %scan_index = OpIAdd %uint %scan_base %w
+  %scan_ptr = OpPtrAccessChain %element_pointer %scanned %scan_index
+  %scan_val = OpLoad %uint %scan_ptr Aligned 4
+      %dest = OpIAdd %uint %scan_val %rank
+   %out_ptr = OpPtrAccessChain %element_pointer %output %dest
+               OpStore %out_ptr %key Aligned 4
+               OpBranch %after_write
+%after_write = OpLabel
+               OpBranch %sc_done
+    %sc_done = OpLabel
+               OpReturn
+               OpFunctionEnd
+      %pairs = OpFunction %void None %main_type
+ %pr_entry = OpLabel
+ %pr_local_vec = OpLoad %uint_3 %local_id
+     %pr_local = OpCompositeExtract %uint %pr_local_vec 0
+%pr_global_vec = OpLoad %uint_3 %global_id
+  %pr_global_x = OpCompositeExtract %uint %pr_global_vec 0
+ %pr_group_vec = OpLoad %uint_3 %group_id
+   %pr_group_x = OpCompositeExtract %uint %pr_group_vec 0
+%pr_first_member = OpAccessChain %push_uint_pointer %push %three
+     %pr_first = OpLoad %uint %pr_first_member
+%pr_count_member = OpAccessChain %push_uint_pointer %push %two
+     %pr_count = OpLoad %uint %pr_count_member
+%pr_input_member = OpAccessChain %push_element_pointer %push %zero
+     %pr_input = OpLoad %element_pointer %pr_input_member
+%pr_output_member = OpAccessChain %push_element_pointer %push %one
+    %pr_output = OpLoad %element_pointer %pr_output_member
+%pr_scanned_member = OpAccessChain %push_element_pointer %push %five
+   %pr_scanned = OpLoad %element_pointer %pr_scanned_member
+%pr_inval_member = OpAccessChain %push_element_pointer %push %six
+    %pr_inval = OpLoad %element_pointer %pr_inval_member
+%pr_outval_member = OpAccessChain %push_element_pointer %push %seven
+   %pr_outval = OpLoad %element_pointer %pr_outval_member
+%pr_group_base = OpUDiv %uint %pr_first %group_size
+        %pr_w = OpIAdd %uint %pr_group_base %pr_group_x
+%pr_gs_minus_1 = OpISub %uint %group_size %one
+  %pr_g_round = OpIAdd %uint %pr_count %pr_gs_minus_1
+        %pr_G = OpUDiv %uint %pr_g_round %group_size
+     %pr_index = OpIAdd %uint %pr_first %pr_global_x
+  %pr_in_range = OpULessThan %bool %pr_index %pr_count
+               OpSelectionMerge %pr_after_store None
+               OpBranchConditional %pr_in_range %pr_store_digit %pr_store_sentinel
+%pr_store_digit = OpLabel
+%pr_source_ptr = OpPtrAccessChain %element_pointer %pr_input %pr_index
+    %pr_source = OpLoad %uint %pr_source_ptr Aligned 4
+    %pr_bucket = OpFunctionCall %uint %fiat_key %pr_source
+%pr_in_buckets = OpULessThan %bool %pr_bucket %buckets
+   %pr_stored = OpSelect %uint %pr_in_buckets %pr_bucket %buckets
+ %pr_digit_ptr = OpAccessChain %shared_uint_pointer %shared_digits %pr_local
+               OpStore %pr_digit_ptr %pr_stored NonPrivatePointer
+               OpBranch %pr_after_store
+%pr_store_sentinel = OpLabel
+%pr_sentinel_ptr = OpAccessChain %shared_uint_pointer %shared_digits %pr_local
+               OpStore %pr_sentinel_ptr %buckets NonPrivatePointer
+               OpBranch %pr_after_store
+%pr_after_store = OpLabel
+               OpControlBarrier %workgroup %workgroup %semantics_workgroup
+               OpSelectionMerge %pr_done None
+               OpBranchConditional %pr_in_range %pr_scatter_body %pr_done
+%pr_scatter_body = OpLabel
+  %pr_key_ptr = OpPtrAccessChain %element_pointer %pr_input %pr_index
+      %pr_key = OpLoad %uint %pr_key_ptr Aligned 4
+        %pr_d = OpFunctionCall %uint %fiat_key %pr_key
+   %pr_d_ok = OpULessThan %bool %pr_d %buckets
+               OpSelectionMerge %pr_after_write None
+               OpBranchConditional %pr_d_ok %pr_rank_setup %pr_after_write
+%pr_rank_setup = OpLabel
+               OpBranch %pr_rank_header
+%pr_rank_header = OpLabel
+      %pr_j = OpPhi %uint %zero %pr_rank_setup %pr_j_next %pr_rank_continue
+   %pr_rank = OpPhi %uint %zero %pr_rank_setup %pr_rank_next %pr_rank_continue
+%pr_rank_more = OpULessThan %bool %pr_j %pr_local
+               OpLoopMerge %pr_rank_done %pr_rank_continue None
+               OpBranchConditional %pr_rank_more %pr_rank_body %pr_rank_done
+ %pr_rank_body = OpLabel
+     %pr_j_ptr = OpAccessChain %shared_uint_pointer %shared_digits %pr_j
+       %pr_jd = OpLoad %uint %pr_j_ptr NonPrivatePointer
+     %pr_same = OpIEqual %bool %pr_jd %pr_d
+      %pr_add = OpSelect %uint %pr_same %one %zero
+ %pr_rank_next = OpIAdd %uint %pr_rank %pr_add
+    %pr_j_next = OpIAdd %uint %pr_j %one
+               OpBranch %pr_rank_continue
+%pr_rank_continue = OpLabel
+               OpBranch %pr_rank_header
+ %pr_rank_done = OpLabel
+ %pr_scan_base = OpIMul %uint %pr_d %pr_G
+%pr_scan_index = OpIAdd %uint %pr_scan_base %pr_w
+ %pr_scan_ptr = OpPtrAccessChain %element_pointer %pr_scanned %pr_scan_index
+ %pr_scan_val = OpLoad %uint %pr_scan_ptr Aligned 4
+     %pr_dest = OpIAdd %uint %pr_scan_val %pr_rank
+  %pr_out_ptr = OpPtrAccessChain %element_pointer %pr_output %pr_dest
+               OpStore %pr_out_ptr %pr_key Aligned 4
+%pr_val_ptr = OpPtrAccessChain %element_pointer %pr_inval %pr_index
+      %pr_val = OpLoad %uint %pr_val_ptr Aligned 4
+%pr_outv_ptr = OpPtrAccessChain %element_pointer %pr_outval %pr_dest
+               OpStore %pr_outv_ptr %pr_val Aligned 4
+               OpBranch %pr_after_write
+%pr_after_write = OpLabel
+               OpBranch %pr_done
+    %pr_done = OpLabel
+               OpReturn
+               OpFunctionEnd

@@ -149,6 +149,14 @@ inline constexpr auto histogram_uint_bytes = std::to_array<unsigned char>({
 #embed "histogram_uint.spv"
 });
 
+inline constexpr auto tile_histogram_uint_bytes = std::to_array<unsigned char>({
+#embed "tile_histogram_uint.spv"
+});
+
+inline constexpr auto stable_scatter_uint_bytes = std::to_array<unsigned char>({
+#embed "stable_scatter_uint.spv"
+});
+
 #if defined(__clang__)
   #pragma clang diagnostic pop
 #endif
@@ -239,6 +247,12 @@ inline constexpr auto scatter_uint_words  = assemble_words(scatter_uint_bytes);
 inline constexpr auto histogram_uint_words =
   assemble_words(histogram_uint_bytes);
 
+inline constexpr auto tile_histogram_uint_words =
+  assemble_words(tile_histogram_uint_bytes);
+
+inline constexpr auto stable_scatter_uint_words =
+  assemble_words(stable_scatter_uint_bytes);
+
 static_assert(transform_float_words.front() == spirv::magic);
 static_assert(transform_int_words.front() == spirv::magic);
 static_assert(transform_uint_words.front() == spirv::magic);
@@ -278,6 +292,10 @@ static_assert(scatter_int_words.front() == spirv::magic);
 static_assert(scatter_uint_words.front() == spirv::magic);
 
 static_assert(histogram_uint_words.front() == spirv::magic);
+
+static_assert(tile_histogram_uint_words.front() == spirv::magic);
+
+static_assert(stable_scatter_uint_words.front() == spirv::magic);
 
 template<scalar Element>
 consteval
@@ -358,5 +376,15 @@ consteval
 auto
 histogram_template() -> std::span<const std::uint32_t>
 { return histogram_uint_words; }
+
+consteval
+auto
+tile_histogram_template() -> std::span<const std::uint32_t>
+{ return tile_histogram_uint_words; }
+
+consteval
+auto
+stable_scatter_template() -> std::span<const std::uint32_t>
+{ return stable_scatter_uint_words; }
 
 } // namespace fiat
