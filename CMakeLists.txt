@@ -145,6 +145,17 @@ foreach(ELEMENT IN ITEMS float int uint)
     list(APPEND FIAT_TEMPLATE_OUTPUTS "${pred_binary}")
   endforeach()
 endforeach()
+
+set(histogram_source "${FIAT_TEMPLATE_DIR}/histogram_uint.spvasm")
+set(histogram_binary "${FIAT_TEMPLATE_DIR}/histogram_uint.spv")
+configure_file(templates/histogram.spvasm.in "${histogram_source}" @ONLY)
+add_custom_command(
+  OUTPUT "${histogram_binary}"
+  COMMAND "${FIAT_SPIRV_AS}" --target-env spv1.6 -o "${histogram_binary}" "${histogram_source}"
+  COMMAND "${FIAT_SPIRV_VAL}" --target-env spv1.6 "${histogram_binary}"
+  DEPENDS "${histogram_source}"
+  VERBATIM)
+list(APPEND FIAT_TEMPLATE_OUTPUTS "${histogram_binary}")
 add_custom_target(fiat_templates DEPENDS ${FIAT_TEMPLATE_OUTPUTS})
 add_dependencies(fiat fiat_templates)
 

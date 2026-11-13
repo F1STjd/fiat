@@ -145,6 +145,10 @@ inline constexpr auto scatter_uint_bytes = std::to_array<unsigned char>({
 #embed "scatter_uint.spv"
 });
 
+inline constexpr auto histogram_uint_bytes = std::to_array<unsigned char>({
+#embed "histogram_uint.spv"
+});
+
 #if defined(__clang__)
   #pragma clang diagnostic pop
 #endif
@@ -227,9 +231,13 @@ inline constexpr auto predicate_not_equal_int_words =
   assemble_words(predicate_not_equal_int_bytes);
 inline constexpr auto predicate_not_equal_uint_words =
   assemble_words(predicate_not_equal_uint_bytes);
+
 inline constexpr auto scatter_float_words = assemble_words(scatter_float_bytes);
 inline constexpr auto scatter_int_words   = assemble_words(scatter_int_bytes);
 inline constexpr auto scatter_uint_words  = assemble_words(scatter_uint_bytes);
+
+inline constexpr auto histogram_uint_words =
+  assemble_words(histogram_uint_bytes);
 
 static_assert(transform_float_words.front() == spirv::magic);
 static_assert(transform_int_words.front() == spirv::magic);
@@ -264,9 +272,12 @@ static_assert(predicate_equal_uint_words.front() == spirv::magic);
 static_assert(predicate_not_equal_float_words.front() == spirv::magic);
 static_assert(predicate_not_equal_int_words.front() == spirv::magic);
 static_assert(predicate_not_equal_uint_words.front() == spirv::magic);
+
 static_assert(scatter_float_words.front() == spirv::magic);
 static_assert(scatter_int_words.front() == spirv::magic);
 static_assert(scatter_uint_words.front() == spirv::magic);
+
+static_assert(histogram_uint_words.front() == spirv::magic);
 
 template<scalar Element>
 consteval
@@ -342,5 +353,10 @@ scan_template() -> std::span<const std::uint32_t>
     }
   }
 }
+
+consteval
+auto
+histogram_template() -> std::span<const std::uint32_t>
+{ return histogram_uint_words; }
 
 } // namespace fiat

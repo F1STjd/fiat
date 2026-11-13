@@ -117,17 +117,49 @@ static_assert(
   sizeof(detail::scatter_push) == 48UZ,
   "fits the 128 bytes every Vulkan device guarantees");
 
+namespace detail
+{
+
+export struct histogram_push
+{
+  std::uint64_t                                input {};
+  std::uint64_t                                counts {};
+  std::uint32_t                                count {};
+  std::uint32_t                                first {};
+  std::array<std::uint32_t, argument_capacity> arguments {};
+};
+
+} // namespace detail
+
+static_assert(
+  sizeof(detail::histogram_push) ==
+    detail::argument_offset + argument_capacity * sizeof(std::uint32_t),
+  "matches the template push block");
+static_assert(
+  sizeof(detail::histogram_push) == 128UZ,
+  "fits the 128 bytes every Vulkan device guarantees");
+
 export inline constexpr std::string_view transform_entry {"fiat_transform"};
+
 export inline constexpr std::string_view reduce_entry {"fiat_reduce"};
+
 export inline constexpr std::string_view scan_upsweep_entry {
   "fiat_scan_upsweep"
 };
 export inline constexpr std::string_view scan_downsweep_entry {
   "fiat_scan_downsweep"
 };
-export inline constexpr std::uint32_t    group_size_constant_id {};
+export inline constexpr std::uint32_t group_size_constant_id {};
+
 export inline constexpr std::string_view predicate_entry {"fiat_predicate"};
+
 export inline constexpr std::string_view scatter_entry {"fiat_scatter"};
+
+export inline constexpr std::string_view histogram_entry {"fiat_histogram"};
+export inline constexpr std::string_view histogram_global_entry {
+  "fiat_histogram_global"
+};
+export inline constexpr std::uint32_t buckets_constant_id {1U};
 
 export template<class Operation>
 struct transform_stage
@@ -210,6 +242,58 @@ export constexpr
 auto
 scatter() -> scatter_stage
 { return {}; }
+
+export enum class histogram_mode : std::uint8_t
+{
+  privatized,
+  global,
+};
+
+export template<std::uint32_t Buckets, histogram_mode Mode, class Key>
+struct histogram_stage
+{
+  static constexpr std::uint32_t  buckets {Buckets};
+  static constexpr histogram_mode mode {Mode};
+  using key_type = Key;
+  typename arguments_of<Key>::type arguments {};
+};
+
+export
+template<
+  std::uint32_t  Buckets,
+  histogram_mode Mode = histogram_mode::privatized,
+  class Key,
+  class... Arguments
+>
+constexpr auto
+histogram(Key, Arguments... arguments) -> histogram_stage<Buckets, Mode, Key>
+{
+  static_assert(Buckets >= 1U, "fiat::histogram needs at least one bucket");
+  static_assert(
+    std::is_empty_v<Key> && std::default_initializable<Key>,
+    "fiat::histogram cannot read lambda captures; pass runtime values as "
+    "arguments: fiat::histogram<Buckets>(key, value)");
+  static_assert(
+    (scalar<Arguments> && ...),
+    "fiat::histogram arguments must be float, std::int32_t or std::uint32_t");
+  static_assert(
+    sizeof...(Arguments) <= argument_capacity,
+    "fiat::histogram takes at most 26 runtime arguments");
+  static_assert(
+    std::same_as<std::tuple<Arguments...>, typename arguments_of<Key>::type>,
+    "fiat::histogram arguments must match the key");
+  if constexpr (requires { Key::bits; })
+  {
+    static_assert(Key::bits < 32U, "fiat::digit bits must be less than 32");
+    static_assert(
+      Buckets == (Key::bits < 32U ? (1U << Key::bits) : 0U),
+      "fiat::histogram buckets must equal 1U << bits");
+  }
+  static_assert(
+    traceable<Key, std::uint32_t>,
+    "fiat::histogram key must be traceable on std::uint32_t");
+  return {.arguments = {arguments...}};
+}
 
 export template<class Operation, class... Arguments>
 struct bound_operation
@@ -941,8 +1025,48 @@ template<scalar Element>
 consteval auto
 compile(scatter_stage) -> std::array<std::uint32_t, scatter_word_count<Element>>
 {
-  auto words = detail::scatter_words<Element>();
+  const auto words = detail::scatter_words<Element>();
   std::array<std::uint32_t, scatter_word_count<Element>> result {};
+  std::ranges::copy(words, result.begin());
+  return result;
+}
+
+namespace detail
+{
+
+template<class Key>
+  requires traceable<Key, std::uint32_t>
+constexpr
+auto
+histogram_module() -> std::vector<std::uint32_t>
+{
+  const auto instructions = trace<std::uint32_t, Key>();
+  return splice<std::uint32_t>(
+    histogram_template(),
+    std::array {
+      symbol_trace {key_symbol, instructions},
+    });
+}
+
+} // namespace detail
+
+export template<class Key>
+  requires traceable<Key, std::uint32_t>
+inline constexpr std::size_t histogram_word_count =
+  detail::histogram_module<Key>().size();
+
+export
+template<scalar Element, std::uint32_t Buckets, histogram_mode Mode, class Key>
+  requires (
+    std::same_as<Element, std::uint32_t> &&
+    traceable<Key, Element> &&
+    (Buckets >= 1U))
+consteval auto
+compile(histogram_stage<Buckets, Mode, Key>)
+  -> std::array<std::uint32_t, histogram_word_count<Key>>
+{
+  const auto words = detail::histogram_module<Key>();
+  std::array<std::uint32_t, histogram_word_count<Key>> result {};
   std::ranges::copy(words, result.begin());
   return result;
 }

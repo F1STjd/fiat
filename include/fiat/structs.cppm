@@ -851,12 +851,14 @@ foreach_module() -> std::vector<std::uint32_t>
   {
     switch (item.code)
     {
-    case operation::parameter : break;
-    case operation::constant  : break;
-    case operation::add       :
-    case operation::subtract  :
-    case operation::multiply  :
-    case operation::divide :
+    case operation::parameter   : break;
+    case operation::constant    : break;
+    case operation::add         :
+    case operation::subtract    :
+    case operation::multiply    :
+    case operation::divide      :
+    case operation::shift_right :
+    case operation::bitwise_and :
     {
       out.emit(
         detail::opcode_for(item.code, item.kind),

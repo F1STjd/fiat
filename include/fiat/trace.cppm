@@ -33,6 +33,8 @@ export enum class operation : std::uint8_t
   subtract,
   multiply,
   divide,
+  shift_right,
+  bitwise_and,
   negate,
   minimum,
   maximum,
@@ -408,6 +410,34 @@ template<scalar Type, literal_for<Type> Left>
 constexpr auto
 operator /(const Left& left, const value<Type>& right) -> value<Type>
 { return combine<Type>(operation::divide, left, right); }
+
+export
+template<scalar Type, operand_for<Type> Right>
+  requires std::same_as<Type, std::uint32_t>
+constexpr auto
+operator >>(const value<Type>& left, const Right& right) -> value<Type>
+{ return combine<Type>(operation::shift_right, left, right); }
+
+export
+template<scalar Type, literal_for<Type> Left>
+  requires std::same_as<Type, std::uint32_t>
+constexpr auto
+operator >>(const Left& left, const value<Type>& right) -> value<Type>
+{ return combine<Type>(operation::shift_right, left, right); }
+
+export
+template<scalar Type, operand_for<Type> Right>
+  requires std::same_as<Type, std::uint32_t>
+constexpr auto
+operator &(const value<Type>& left, const Right& right) -> value<Type>
+{ return combine<Type>(operation::bitwise_and, left, right); }
+
+export
+template<scalar Type, literal_for<Type> Left>
+  requires std::same_as<Type, std::uint32_t>
+constexpr auto
+operator &(const Left& left, const value<Type>& right) -> value<Type>
+{ return combine<Type>(operation::bitwise_and, left, right); }
 
 export
 template<scalar Type>

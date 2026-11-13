@@ -10,6 +10,7 @@ namespace fiat
 export inline constexpr std::string_view operation_symbol {"fiat_operation"};
 export inline constexpr std::string_view combine_symbol {"fiat_combine"};
 export inline constexpr std::string_view epilogue_symbol {"fiat_epilogue"};
+export inline constexpr std::string_view key_symbol {"fiat_key"};
 
 template<class Operation>
 struct arguments_of
@@ -289,6 +290,8 @@ opcode_for(operation code, scalar_kind kind) -> spirv::opcode
     if (floating) { return spirv::opcode::fdiv; }
     return kind == scalar_kind::int32 ? spirv::opcode::sdiv : spirv::opcode::udiv;
   }
+  case operation::shift_right : return spirv::opcode::shift_right_logical;
+  case operation::bitwise_and : return spirv::opcode::bitwise_and;
   case operation::negate :
     return floating ? spirv::opcode::fnegate : spirv::opcode::snegate;
   case operation::minimum          :
@@ -398,12 +401,14 @@ emit_definition(
   {
     switch (item.code)
     {
-    case operation::parameter :
-    case operation::constant  : break;
-    case operation::add       :
-    case operation::subtract  :
-    case operation::multiply  :
-    case operation::divide :
+    case operation::parameter   :
+    case operation::constant    : break;
+    case operation::add         :
+    case operation::subtract    :
+    case operation::multiply    :
+    case operation::divide      :
+    case operation::shift_right :
+    case operation::bitwise_and :
     {
       out.emit(
         detail::opcode_for(item.code, item.kind),

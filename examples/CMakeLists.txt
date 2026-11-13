@@ -3,7 +3,7 @@ string(REPLACE "\\" "/" _fiat_spv_output_dir "${_fiat_spv_output_dir}")
 foreach(
   example IN ITEMS
   multiply increment transform scale reduce transform_with scan selection
-  compact)
+  compact histogram)
   add_executable(fiat_${example} ${example}.cpp)
   target_link_libraries(fiat_${example} PRIVATE fiat::fiat)
   set_target_properties(fiat_${example} PROPERTIES CXX_MODULE_STD ON)

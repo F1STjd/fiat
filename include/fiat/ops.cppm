@@ -97,6 +97,25 @@ export struct identity
   { return operand; }
 };
 
+export template<std::uint32_t Bits>
+struct digit
+{
+  static_assert(Bits < 32U, "fiat::digit bits must be less than 32");
+  static constexpr std::uint32_t bits {Bits};
+  static constexpr std::uint32_t mask {
+    static_cast<std::uint32_t>((1ULL << Bits) - 1ULL),
+  };
+
+  using argument_tuple = std::tuple<std::uint32_t>;
+
+  constexpr
+  auto
+  operator ()(
+    const value<std::uint32_t>& key, const value<std::uint32_t>& shift)
+    -> value<std::uint32_t>
+  { return (key >> shift) & mask; }
+};
+
 export struct greater {};
 export struct greater_equal {};
 export struct less {};

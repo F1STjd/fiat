@@ -1,0 +1,170 @@
+; fiat histogram template (HG1). uint keys and uint counts only.
+; Assembled with spirv-as --target-env spv1.6, validated with spirv-val --target-env spv1.6.
+; The splicer replaces the Import declaration of %fiat_key (uint -> uint) with the
+; traced definition, and removes OpCapability Linkage plus the LinkageAttributes decorations.
+; Two entry points share the module: fiat_histogram (privatized: zero a Workgroup table,
+; Workgroup-scope atomic add, barrier, Device-scope merge) and fiat_histogram_global
+; (Device-scope atomic add straight into counts). Group size is SpecId 0; bucket count
+; is SpecId 1. Out-of-range keys (key >= buckets) are skipped.
+; Invariant (one reader per element): an invocation reads input[i] only to add one
+; to counts[key]; counts lives in a different buffer.
+               OpCapability Shader
+               OpCapability PhysicalStorageBufferAddresses
+               OpCapability VulkanMemoryModel
+               OpCapability VulkanMemoryModelDeviceScope
+               OpCapability Int64
+               OpCapability Linkage
+       %glsl = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel PhysicalStorageBuffer64 Vulkan
+               OpEntryPoint GLCompute %privatized "fiat_histogram" %global_id %local_id %push %shared_hist
+               OpEntryPoint GLCompute %global "fiat_histogram_global" %global_id %push
+               OpExecutionModeId %privatized LocalSizeId %group_size %one %one
+               OpExecutionModeId %global LocalSizeId %group_size %one %one
+               OpDecorate %fiat_key LinkageAttributes "fiat_key" Import
+               OpDecorate %global_id BuiltIn GlobalInvocationId
+               OpDecorate %local_id BuiltIn LocalInvocationId
+               OpDecorate %group_size SpecId 0
+               OpDecorate %buckets SpecId 1
+               OpDecorate %element_pointer ArrayStride 4
+               OpDecorate %argument_array ArrayStride 4
+               OpDecorate %push_type Block
+               OpMemberDecorate %push_type 0 Offset 0
+               OpMemberDecorate %push_type 1 Offset 8
+               OpMemberDecorate %push_type 2 Offset 16
+               OpMemberDecorate %push_type 3 Offset 20
+               OpMemberDecorate %push_type 4 Offset 24
+       %void = OpTypeVoid
+       %bool = OpTypeBool
+       %uint = OpTypeInt 32 0
+      %ulong = OpTypeInt 64 0
+%argument_count = OpConstant %uint 26
+%argument_array = OpTypeArray %uint %argument_count
+     %uint_3 = OpTypeVector %uint 3
+%element_pointer = OpTypePointer PhysicalStorageBuffer %uint
+  %push_type = OpTypeStruct %element_pointer %element_pointer %uint %uint %argument_array
+%push_pointer = OpTypePointer PushConstant %push_type
+%push_element_pointer = OpTypePointer PushConstant %element_pointer
+%push_uint_pointer = OpTypePointer PushConstant %uint
+%input_uint_3_pointer = OpTypePointer Input %uint_3
+%main_type = OpTypeFunction %void
+   %key_type = OpTypeFunction %uint %uint
+       %zero = OpConstant %uint 0
+        %one = OpConstant %uint 1
+        %two = OpConstant %uint 2
+      %three = OpConstant %uint 3
+     %device = OpConstant %uint 1
+  %workgroup = OpConstant %uint 2
+; 24840 = AcquireRelease | WorkgroupMemory | MakeAvailable | MakeVisible
+; 72 = AcquireRelease | UniformMemory
+%semantics_workgroup = OpConstant %uint 24840
+%semantics_device = OpConstant %uint 72
+ %group_size = OpSpecConstant %uint 256
+    %buckets = OpSpecConstant %uint 256
+%shared_array = OpTypeArray %uint %buckets
+%shared_array_pointer = OpTypePointer Workgroup %shared_array
+%shared_uint_pointer = OpTypePointer Workgroup %uint
+  %global_id = OpVariable %input_uint_3_pointer Input
+   %local_id = OpVariable %input_uint_3_pointer Input
+       %push = OpVariable %push_pointer PushConstant
+%shared_hist = OpVariable %shared_array_pointer Workgroup
+    %fiat_key = OpFunction %uint None %key_type
+%key_parameter = OpFunctionParameter %uint
+               OpFunctionEnd
+%privatized = OpFunction %void None %main_type
+ %priv_entry = OpLabel
+  %local_vec = OpLoad %uint_3 %local_id
+      %local = OpCompositeExtract %uint %local_vec 0
+ %global_vec = OpLoad %uint_3 %global_id
+   %global_x = OpCompositeExtract %uint %global_vec 0
+%first_member = OpAccessChain %push_uint_pointer %push %three
+      %first = OpLoad %uint %first_member
+%count_member = OpAccessChain %push_uint_pointer %push %two
+      %count = OpLoad %uint %count_member
+%input_member = OpAccessChain %push_element_pointer %push %zero
+      %input = OpLoad %element_pointer %input_member
+%counts_member = OpAccessChain %push_element_pointer %push %one
+     %counts = OpLoad %element_pointer %counts_member
+               OpBranch %zero_header
+%zero_header = OpLabel
+  %zero_slot = OpPhi %uint %local %priv_entry %zero_next %zero_continue
+  %zero_more = OpULessThan %bool %zero_slot %buckets  
+               OpLoopMerge %zero_done %zero_continue None
+               OpBranchConditional %zero_more %zero_body %zero_done
+  %zero_body = OpLabel
+   %zero_ptr = OpAccessChain %shared_uint_pointer %shared_hist %zero_slot
+               OpStore %zero_ptr %zero NonPrivatePointer
+  %zero_next = OpIAdd %uint %zero_slot %group_size
+               OpBranch %zero_continue
+%zero_continue = OpLabel
+               OpBranch %zero_header
+  %zero_done = OpLabel
+               OpControlBarrier %workgroup %workgroup %semantics_workgroup
+      %index = OpIAdd %uint %first %global_x
+   %in_range = OpULessThan %bool %index %count
+               OpSelectionMerge %after_count None
+               OpBranchConditional %in_range %count_body %after_count
+ %count_body = OpLabel
+ %source_ptr = OpPtrAccessChain %element_pointer %input %index
+     %source = OpLoad %uint %source_ptr Aligned 4
+     %bucket = OpFunctionCall %uint %fiat_key %source
+ %in_buckets = OpULessThan %bool %bucket %buckets
+               OpSelectionMerge %after_atomic None
+               OpBranchConditional %in_buckets %atomic_body %after_atomic
+%atomic_body = OpLabel
+%shared_slot = OpAccessChain %shared_uint_pointer %shared_hist %bucket
+    %ignored = OpAtomicIAdd %uint %shared_slot %workgroup %semantics_workgroup %one
+               OpBranch %after_atomic
+%after_atomic = OpLabel
+               OpBranch %after_count
+%after_count = OpLabel
+               OpControlBarrier %workgroup %workgroup %semantics_workgroup
+               OpBranch %merge_header
+%merge_header = OpLabel
+ %merge_slot = OpPhi %uint %local %after_count %merge_next %merge_continue
+ %merge_more = OpULessThan %bool %merge_slot %buckets
+               OpLoopMerge %merge_done %merge_continue None
+               OpBranchConditional %merge_more %merge_body %merge_done
+ %merge_body = OpLabel
+%shared_val_ptr = OpAccessChain %shared_uint_pointer %shared_hist %merge_slot
+ %shared_val = OpLoad %uint %shared_val_ptr NonPrivatePointer
+%counts_slot = OpPtrAccessChain %element_pointer %counts %merge_slot
+    %merged = OpAtomicIAdd %uint %counts_slot %device %semantics_device %shared_val
+ %merge_next = OpIAdd %uint %merge_slot %group_size
+               OpBranch %merge_continue
+%merge_continue = OpLabel
+               OpBranch %merge_header
+ %merge_done = OpLabel
+               OpReturn
+               OpFunctionEnd
+     %global = OpFunction %void None %main_type
+ %glob_entry = OpLabel
+   %glob_vec = OpLoad %uint_3 %global_id
+     %glob_x = OpCompositeExtract %uint %glob_vec 0
+%glob_first_member = OpAccessChain %push_uint_pointer %push %three
+ %glob_first = OpLoad %uint %glob_first_member
+ %glob_index = OpIAdd %uint %glob_first %glob_x
+%glob_count_member = OpAccessChain %push_uint_pointer %push %two
+ %glob_count = OpLoad %uint %glob_count_member
+%glob_in_range = OpULessThan %bool %glob_index %glob_count
+               OpSelectionMerge %glob_done None
+               OpBranchConditional %glob_in_range %glob_body %glob_done
+  %glob_body = OpLabel
+%glob_input_member = OpAccessChain %push_element_pointer %push %zero
+ %glob_input = OpLoad %element_pointer %glob_input_member
+%glob_source_ptr = OpPtrAccessChain %element_pointer %glob_input %glob_index
+%glob_source = OpLoad %uint %glob_source_ptr Aligned 4
+%glob_bucket = OpFunctionCall %uint %fiat_key %glob_source
+%glob_in_buckets = OpULessThan %bool %glob_bucket %buckets
+               OpSelectionMerge %glob_after None
+               OpBranchConditional %glob_in_buckets %glob_atomic %glob_after
+%glob_atomic = OpLabel
+%glob_counts_member = OpAccessChain %push_element_pointer %push %one
+%glob_counts = OpLoad %element_pointer %glob_counts_member
+%glob_counts_slot = OpPtrAccessChain %element_pointer %glob_counts %glob_bucket
+  %glob_added = OpAtomicIAdd %uint %glob_counts_slot %device %semantics_device %one
+               OpBranch %glob_after
+ %glob_after = OpLabel
+               OpBranch %glob_done
+  %glob_done = OpLabel
+               OpReturn
+               OpFunctionEnd
