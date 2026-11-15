@@ -19,6 +19,7 @@ target_sources(fiat
       include/fiat/emit.cppm
       include/fiat/templates.cppm
       include/fiat/splice.cppm
+      include/fiat/stage.cppm
       include/fiat/kernel.cppm
       include/fiat/structs.cppm
       include/fiat/ops.cppm)
