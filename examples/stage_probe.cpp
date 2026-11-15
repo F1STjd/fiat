@@ -9,6 +9,9 @@ struct transform_probe
     fiat::skeleton_kind::transform
   };
   static constexpr fiat::stage_schedule schedule {};
+  static constexpr std::array           dispatches {
+    fiat::dispatch_rule {.entry = fiat::transform_entry},
+  };
 
   template<fiat::scalar Element>
   using ports = std::tuple<
@@ -31,6 +34,10 @@ struct scan_probe
     fiat::skeleton_kind::inclusive_scan
   };
   static constexpr fiat::stage_schedule schedule {};
+  static constexpr std::array           dispatches {
+    fiat::dispatch_rule {.entry = fiat::scan_upsweep_entry},
+    fiat::dispatch_rule {.entry = fiat::scan_downsweep_entry},
+  };
 
   template<fiat::scalar Element>
   using ports = std::tuple<
@@ -69,6 +76,15 @@ static_assert(
 static_assert(
   legacy_layout.size() == sizeof(fiat::detail::transform_push),
   "2 ports and 26 arguments match the transform push block");
+static_assert(
+  fiat::skeleton_push_of<square_transform, float>.size() == legacy_layout.size(),
+  "the skeleton push block of a 2-port stage is the transform push block");
+static_assert(
+  !fiat::archetype_stage<
+    fiat::transform_stage<fiat::chain<fiat::bound_operation<fiat::square>>>,
+    double
+  >,
+  "archetype stages take fiat scalars only");
 static_assert(
   std::ranges::equal(
     fiat::compile<float>(square_transform {}),

@@ -66,7 +66,20 @@ struct splice_operation
   using operation_type = Operation;
 };
 
+export enum class dispatch_extent : std::uint8_t
+{
+  per_element,
+};
+
+export struct dispatch_rule
+{
+  std::string_view entry {};
+  dispatch_extent  extent {dispatch_extent::per_element};
+};
+
 export inline constexpr std::uint32_t push_budget {256U};
+
+export inline constexpr std::uint32_t skeleton_push_bytes {128U};
 
 export struct dispatch_push
 {
@@ -149,6 +162,14 @@ inline constexpr bool is_splice_tuple<Element, std::tuple<Splices...>> {
   sizeof...(Splices) >= 1UZ && (traceable_splice<Splices, Element> && ...),
 };
 
+template<class Dispatches>
+inline constexpr bool is_dispatch_array {false};
+
+template<std::size_t Count>
+inline constexpr bool is_dispatch_array<std::array<dispatch_rule, Count>> {
+  Count >= 1UZ,
+};
+
 template<class Splices>
 struct splice_arguments;
 
@@ -171,9 +192,11 @@ concept archetype_stage =
     typename Stage::template ports<Element>;
     typename Stage::splices;
     typename std::remove_cvref_t<decltype(Stage::arguments)>;
+    typename std::remove_cvref_t<decltype(Stage::dispatches)>;
   } &&
   is_port_tuple<typename Stage::template ports<Element>> &&
   is_splice_tuple<Element, typename Stage::splices> &&
+  is_dispatch_array<std::remove_cvref_t<decltype(Stage::dispatches)>> &&
   std::same_as<
     std::remove_cvref_t<decltype(Stage::arguments)>,
     typename splice_arguments<typename Stage::splices>::type
@@ -186,6 +209,14 @@ inline constexpr dispatch_push dispatch_push_of {
     std::tuple_size_v<typename Stage::template ports<Element>>),
   .arguments = static_cast<std::uint32_t>(
     std::tuple_size_v<std::remove_cvref_t<decltype(Stage::arguments)>>),
+};
+
+export template<class Stage, class Element>
+  requires archetype_stage<Stage, Element>
+inline constexpr dispatch_push skeleton_push_of {
+  .ports = dispatch_push_of<Stage, Element>.ports,
+  .arguments =
+    dispatch_push_of<Stage, Element>.argument_words_within(skeleton_push_bytes),
 };
 
 template<skeleton_kind Skeleton, scalar Element>
@@ -320,6 +351,9 @@ compile(const Stage&)
   static_assert(
     dispatch_push_of<Stage, Element>.size() <= push_budget,
     "fiat stage ports and arguments must fit the 256-byte push budget");
+  static_assert(
+    dispatch_push_of<Stage, Element>.size() <= skeleton_push_bytes,
+    "fiat stage ports and arguments must fit the 128-byte skeleton push block");
   const std::vector<std::uint32_t> words =
     stage_module<Element, Stage>(splice_positions<Stage> {});
   std::array<std::uint32_t, stage_word_count<Element, Stage>> result {};
