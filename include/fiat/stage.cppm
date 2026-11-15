@@ -311,7 +311,7 @@ compile(const Stage&)
   -> std::array<std::uint32_t, stage_word_count<Element, Stage>>
 {
   static_assert(
-    Stage::schedule.group_size == 0UZ ||
+    Stage::schedule.group_size == 0U ||
       std::has_single_bit(Stage::schedule.group_size),
     "fiat stage group_size must be 0 (the context's) or a power of two");
   static_assert(
@@ -319,7 +319,7 @@ compile(const Stage&)
     "fiat stage items_per_invocation must be 1");
   static_assert(
     dispatch_push_of<Stage, Element>.size() <= push_budget,
-    "fiat stage and arguments must fit the 256-byte push budget");
+    "fiat stage ports and arguments must fit the 256-byte push budget");
   const std::vector<std::uint32_t> words =
     stage_module<Element, Stage>(splice_positions<Stage> {});
   std::array<std::uint32_t, stage_word_count<Element, Stage>> result {};
