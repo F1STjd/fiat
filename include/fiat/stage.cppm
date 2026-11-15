@@ -156,7 +156,7 @@ template<class... Splices>
 struct splice_arguments<std::tuple<Splices...>>
 {
   using type = decltype(std::tuple_cat(
-    stddeclval<
+    std::declval<
       typename arguments_of<typename Splices::operation_type>::type
     >()...));
 };
