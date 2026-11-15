@@ -43,8 +43,8 @@
 %operation_type = OpTypeFunction %@ELEMENT@ %@ELEMENT@
 %input_port = OpConstant %uint 0
         %one = OpConstant %uint 1
-%count_memeber_index = OpConstant %uint 2
-%first_memeber_index = OpConstant %uint 3
+%count_member_index = OpConstant %uint 2
+%first_member_index = OpConstant %uint 3
  %group_size = OpSpecConstant %uint 256
   %global_id = OpVariable %input_uint_3_pointer Input
        %push = OpVariable %push_pointer PushConstant
