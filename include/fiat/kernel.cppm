@@ -6,6 +6,7 @@ import :trace;
 import :emit;
 import :templates;
 import :splice;
+import :stage;
 import :ops;
 
 namespace fiat
@@ -230,6 +231,22 @@ export inline constexpr std::string_view stable_scatter_pairs_entry {
 export template<class Operation>
 struct transform_stage
 {
+  static constexpr stage_class    kind {stage_class::elementwise};
+  static constexpr skeleton_kind  skeleton {skeleton_kind::transform};
+  static constexpr stage_schedule schedule {};
+  static constexpr std::array     dispatches {
+    dispatch_rule {.entry = transform_entry},
+  };
+
+  template<scalar Element>
+  using ports = std::tuple<
+    port<Element, port_access::read>,
+    port<Element, port_access::write>
+  >;
+
+  using splices =
+    std::tuple<splice_operation<splice_point::operation, Operation>>;
+
   typename arguments_of<Operation>::type arguments {};
 };
 
@@ -595,6 +612,41 @@ operator |(
   -> transform_stage<chain<Left..., Right...>>
 { return fuse(left, right); }
 
+template<scalar Element, class Operation>
+consteval
+auto
+matches_transform_splice(transform_stage<Operation> stage) -> bool
+{
+  const std::vector<instruction> instructions =
+    detail::trace<Element, Operation>();
+  return std::ranges::equal(
+    compile<Element>(stage),
+    splice<Element>(
+      transform_template<Element>(),
+      std::array {
+        detail::symbol_trace {operation_symbol, instructions},
+      }));
+}
+
+static_assert(
+  matches_transform_splice<float>(transform(square {})),
+  "the stage protocol compiles fiat::transform to the spliced template words");
+static_assert(
+  matches_transform_splice<std::int32_t>(
+    transform(multiplies {}, 3) | transform(plus {}, 7)),
+  "the stage protocol compiles fused arguments to the spliced template words");
+static_assert(
+  matches_transform_splice<std::uint32_t>(transform(minus {}, 2U)),
+  "the stage protocol compiles fiat::transform to the spliced template words");
+static_assert(
+  skeleton_push_of<transform_stage<chain<>>, float>.size() ==
+    sizeof(detail::transform_push),
+  "the transform skeleton push block is the 128-byte transform_push");
+static_assert(
+  skeleton_push_of<transform_stage<chain<>>, float>.argument_offset() ==
+    detail::argument_offset,
+  "transform arguments start after two ports, count and first");
+
 export template<scalar Uniform>
 struct uniform_tag {};
 
@@ -777,42 +829,6 @@ operator |(
     .identity           = right.identity,
     .epilogue_arguments = {},
   };
-}
-
-namespace detail
-{
-
-template<scalar Element, class Operation>
-  requires traceable<Operation, Element>
-constexpr
-auto
-transform_module() -> std::vector<std::uint32_t>
-{
-  const std::vector<instruction> instructions = trace<Element, Operation>();
-  return splice<Element>(
-    transform_template<Element>(),
-    std::array {symbol_trace {operation_symbol, instructions}});
-}
-
-} // namespace detail
-
-export template<scalar Element, class Operation>
-  requires traceable<Operation, Element>
-inline constexpr std::size_t transform_word_count =
-  detail::transform_module<Element, Operation>().size();
-
-export
-template<scalar Element, class Operation>
-  requires traceable<Operation, Element>
-consteval auto
-compile(transform_stage<Operation>)
-  -> std::array<std::uint32_t, transform_word_count<Element, Operation>>
-{
-  const std::vector<std::uint32_t> words =
-    detail::transform_module<Element, Operation>();
-  std::array<std::uint32_t, transform_word_count<Element, Operation>> result {};
-  std::ranges::copy(words, result.begin());
-  return result;
 }
 
 namespace detail
