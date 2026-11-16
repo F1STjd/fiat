@@ -102,9 +102,7 @@ struct digit
 {
   static_assert(Bits < 32U, "fiat::digit bits must be less than 32");
   static constexpr std::uint32_t bits {Bits};
-  static constexpr std::uint32_t mask {
-    static_cast<std::uint32_t>((1ULL << Bits) - 1ULL),
-  };
+  static constexpr std::uint32_t mask {(1ULL << Bits) - 1ULL};
 
   using argument_tuple = std::tuple<std::uint32_t>;
 

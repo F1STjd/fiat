@@ -205,19 +205,23 @@ concept archetype_stage =
 export template<class Stage, class Element>
   requires archetype_stage<Stage, Element>
 inline constexpr dispatch_push dispatch_push_of {
-  .ports = static_cast<std::uint32_t>(
-    std::tuple_size_v<typename Stage::template ports<Element>>),
-  .arguments = static_cast<std::uint32_t>(
-    std::tuple_size_v<std::remove_cvref_t<decltype(Stage::arguments)>>),
+  .ports = std::tuple_size_v<typename Stage::template ports<Element>>,
+  .arguments =
+    std::tuple_size_v<std::remove_cvref_t<decltype(Stage::arguments)>>,
 };
 
 export template<class Stage, class Element>
   requires archetype_stage<Stage, Element>
-inline constexpr dispatch_push skeleton_push_of {
-  .ports = dispatch_push_of<Stage, Element>.ports,
-  .arguments =
-    dispatch_push_of<Stage, Element>.argument_words_within(skeleton_push_bytes),
-};
+inline constexpr dispatch_push skeleton_push_of = [] consteval -> dispatch_push {
+  static_assert(
+    dispatch_push_of<Stage, Element>.size() <= skeleton_push_bytes,
+    "fiat stage ports and arguments must fit the 128-byte skeleton push block");
+  return {
+    .ports     = dispatch_push_of<Stage, Element>.ports,
+    .arguments = dispatch_push_of<Stage, Element>.argument_words_within(
+      skeleton_push_bytes),
+  };
+}();
 
 template<skeleton_kind Skeleton, scalar Element>
 consteval
