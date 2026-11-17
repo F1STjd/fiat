@@ -138,7 +138,8 @@ trace_call(
   const std::tuple<value<Arguments>...> arguments {
     value<Arguments> {
       target,
-      target.emit_argument(kind_of<Arguments>, FirstSlot + Indices),
+      target.emit_argument(
+        kind_of<Arguments>, static_cast<std::uint32_t>(FirstSlot + Indices)),
     }...,
   };
   if constexpr (
@@ -174,7 +175,8 @@ trace_uniform_call(
   const std::tuple<value<Arguments>...> arguments {
     value<Arguments> {
       target,
-      target.emit_argument(kind_of<Arguments>, Slots + 2U),
+      target.emit_argument(
+        kind_of<Arguments>, static_cast<std::uint32_t>(Slots + 2U)),
     }...,
   };
 

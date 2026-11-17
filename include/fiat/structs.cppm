@@ -69,8 +69,9 @@ template<soa_element T>
 constexpr auto
 region_offset(std::uint32_t count, std::size_t leaf) -> std::uint64_t
 {
-  const std::uint64_t stride {align_up(count * 4UZ, soa_alignment)};
-  return stride * leaf;
+  const auto stride =
+    static_cast<std::uint64_t>(align_up(count * 4UZ, soa_alignment));
+  return stride * static_cast<std::uint64_t>(leaf);
 }
 
 export
@@ -336,7 +337,8 @@ bind_traced_arguments_impl(
 {
   return std::tuple<value<Arguments>...> {
     value<Arguments> {
-      target, target.emit_argument(kind_of<Arguments>, Slots)
+      target,
+      target.emit_argument(kind_of<Arguments>, static_cast<std::uint32_t>(Slots))
     }...,
   };
 }
@@ -409,8 +411,8 @@ consteval
 auto
 foreach_module() -> std::vector<std::uint32_t>
 {
-  constexpr std::uint32_t leaves = leaf_count_v<Element>;
-  static_assert(leaves > 0U && leaves <= soa_leaf_limit);
+  constexpr auto leaves = leaf_count_v<Element>;
+  static_assert(leaves > 0UZ && leaves <= soa_leaf_limit);
 
   const auto instructions = trace_foreach<Element, Operation>();
 
@@ -727,7 +729,9 @@ foreach_module() -> std::vector<std::uint32_t>
 
   for (auto leaf : std::views::indices(leaves))
   {
-    out.emit(spirv::opcode::constant, {id_uint, id_leaf_const[ leaf ], leaf});
+    out.emit(
+      spirv::opcode::constant,
+      {id_uint, id_leaf_const[ leaf ], static_cast<std::uint32_t>(leaf)});
   }
 
   for (
