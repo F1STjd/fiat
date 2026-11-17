@@ -762,7 +762,7 @@ operator |(
   transform_stage<chain<Left...>>          left,
   reduce_stage<chain<>, Combine, Identity> right)
   -> reduce_stage<chain<Left...>, Combine, Identity>
-{ return {.arguments = std::tuple_cat(left.arguments, right.arguments)}; }
+{ return {.arguments = std::tuple_cat(right.arguments, left.arguments)}; }
 
 template<class Epilogue, class... Next>
 struct extended_epilogue;
