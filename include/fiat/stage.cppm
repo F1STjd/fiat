@@ -69,12 +69,37 @@ struct splice_operation
 export enum class dispatch_extent : std::uint8_t
 {
   per_element,
+  grid_stride,
 };
 
 export struct dispatch_rule
 {
   std::string_view entry {};
   dispatch_extent  extent {dispatch_extent::per_element};
+  std::uint32_t    maximum_groups {};
+};
+
+export struct workspace_sizes
+{
+  std::size_t table_bytes {};
+  std::size_t ping_pong_bytes {};
+  std::size_t scratch_bytes {};
+
+  [[nodiscard]]
+  constexpr
+  auto
+  regions() const -> std::array<std::size_t, 3UZ>
+  { return {table_bytes, ping_pong_bytes, scratch_bytes}; }
+
+  [[nodiscard]]
+  constexpr
+  auto
+  region_count() const -> std::size_t
+  {
+    return std::size_t {table_bytes != 0UZ} +
+           std::size_t {ping_pong_bytes != 0UZ} +
+           std::size_t {scratch_bytes != 0UZ};
+  }
 };
 
 export inline constexpr std::uint32_t push_budget {256U};
@@ -182,6 +207,30 @@ struct splice_arguments<std::tuple<Splices...>>
     >()...));
 };
 
+template<class Stage>
+struct leading_arguments_of
+{
+  using type = std::tuple<>;
+};
+
+template<class Stage>
+  requires requires { typename Stage::leading_arguments; }
+struct leading_arguments_of<Stage>
+{
+  using type = typename Stage::leading_arguments;
+};
+
+template<class Stage>
+inline constexpr std::size_t leading_slots =
+  std::tuple_size_v<typename leading_arguments_of<Stage>::type>;
+
+export template<class Stage>
+inline constexpr workspace_sizes workspace_of {};
+
+export template<class Stage>
+  requires requires { Stage::workspace; }
+inline constexpr workspace_sizes workspace_of<Stage> {Stage::workspace};
+
 export template<class Stage, class Element>
 concept archetype_stage =
   scalar<Element> &&
@@ -199,14 +248,17 @@ concept archetype_stage =
   is_dispatch_array<std::remove_cvref_t<decltype(Stage::dispatches)>> &&
   std::same_as<
     std::remove_cvref_t<decltype(Stage::arguments)>,
-    typename splice_arguments<typename Stage::splices>::type
+    decltype(std::tuple_cat(
+      std::declval<typename leading_arguments_of<Stage>::type>(),
+      std::declval<typename splice_arguments<typename Stage::splices>::type>()))
   >;
 
 export template<class Stage, class Element>
   requires archetype_stage<Stage, Element>
 inline constexpr dispatch_push dispatch_push_of {
   .ports = static_cast<std::uint32_t>(
-    std::tuple_size_v<typename Stage::template ports<Element>>),
+    std::tuple_size_v<typename Stage::template ports<Element>> +
+    workspace_of<Stage>.region_count()),
   .arguments = static_cast<std::uint32_t>(
     std::tuple_size_v<std::remove_cvref_t<decltype(Stage::arguments)>>),
 };
@@ -319,7 +371,8 @@ stage_module(std::index_sequence<Positions...>) -> std::vector<std::uint32_t>
     trace_splice<
       Element,
       std::tuple_element_t<Positions, splices>,
-      first_slot<splices>(std::make_index_sequence<Positions> {})
+      leading_slots<Stage> +
+        first_slot<splices>(std::make_index_sequence<Positions> {})
     >()...,
   };
   const std::array<detail::symbol_trace, sizeof...(Positions)> traces {
@@ -348,6 +401,14 @@ compile(const Stage&)
   static_assert(
     Stage::schedule.items_per_invocation == 1U,
     "fiat stage items_per_invocation must be 1");
+  static_assert(
+    std::ranges::all_of(
+      Stage::dispatches,
+      [](const dispatch_rule& rule) -> bool {
+        return rule.extent != dispatch_extent::grid_stride ||
+               (rule.maximum_groups >= 1U && rule.maximum_groups <= 65'535U);
+      }),
+    "fiat grid_stride dispatches need maximum_groups in [1, 65535]");
   static_assert(
     dispatch_push_of<Stage, Element>.size() <= push_budget,
     "fiat stage ports and arguments must fit the 256-byte push budget");
