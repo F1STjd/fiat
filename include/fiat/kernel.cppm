@@ -38,15 +38,6 @@ export inline constexpr std::size_t reduce_scratch_bytes {
 };
 static_assert(reduce_scratch_bytes == 4'104UZ, "counter + result + partials");
 
-export struct reduce_push
-{
-  std::uint64_t                                input {};
-  std::uint64_t                                scratch {};
-  std::uint32_t                                count {};
-  std::uint32_t                                identity {};
-  std::array<std::uint32_t, argument_capacity> arguments {};
-};
-
 } // namespace detail
 
 export inline constexpr std::size_t reduce_result_offset {4UZ};
@@ -59,13 +50,6 @@ static_assert(
   "matches the template push block");
 static_assert(
   sizeof(detail::transform_push) == 128UZ,
-  "fits the 128 bytes every Vulkan device guarantees");
-static_assert(
-  sizeof(detail::reduce_push) ==
-    detail::argument_offset + argument_capacity * sizeof(std::uint32_t),
-  "matches the template push block");
-static_assert(
-  sizeof(detail::reduce_push) == 128UZ,
   "fits the 128 bytes every Vulkan device guarantees");
 
 export inline constexpr std::size_t scan_argument_capacity {
@@ -258,9 +242,35 @@ export template<
 >
 struct reduce_stage
 {
-  typename arguments_of<Operation>::type arguments {};
-  Identity                               identity {};
-  typename arguments_of<Epilogue>::type  epilogue_arguments {};
+  static constexpr stage_class    kind {stage_class::sink};
+  static constexpr skeleton_kind  skeleton {skeleton_kind::reduce};
+  static constexpr stage_schedule schedule {};
+  static constexpr std::array     dispatches {
+    dispatch_rule {
+      .entry          = reduce_entry,
+      .extent         = dispatch_extent::grid_stride,
+      .maximum_groups = detail::reduce_group_limit,
+    },
+  };
+  static constexpr workspace_sizes workspace {
+    .scratch_bytes = detail::reduce_scratch_bytes,
+  };
+
+  template<std::same_as<Identity> Element>
+  using ports = std::tuple<port<Element, port_access::read>>;
+
+  using leading_arguments = std::tuple<Identity>;
+
+  using splices = std::tuple<
+    splice_operation<splice_point::operation, Operation>,
+    splice_operation<splice_point::combine, Combine>,
+    splice_operation<splice_point::epilogue, Epilogue>
+  >;
+
+  decltype(std::tuple_cat(
+    std::declval<leading_arguments>(),
+    std::declval<typename arguments_of<Operation>::type>(),
+    std::declval<typename arguments_of<Epilogue>::type>())) arguments {};
 };
 
 export template<
@@ -742,11 +752,7 @@ reduce(Combine, Identity identity) -> reduce_stage<chain<>, Combine, Identity>
     std::tuple_size_v<typename arguments_of<Combine>::type> == 0UZ,
     "fiat::reduce combine operations take no runtime arguments; fuse a "
     "fiat::transform before the reduce instead");
-  return {
-    .arguments          = {},
-    .identity           = identity,
-    .epilogue_arguments = {},
-  };
+  return {.arguments = {identity}};
 }
 
 export
@@ -756,13 +762,54 @@ operator |(
   transform_stage<chain<Left...>>          left,
   reduce_stage<chain<>, Combine, Identity> right)
   -> reduce_stage<chain<Left...>, Combine, Identity>
+{ return {.arguments = std::tuple_cat(left.arguments, right.arguments)}; }
+
+template<class Epilogue, class... Next>
+struct extended_epilogue;
+
+template<class... Next>
+struct extended_epilogue<identity, Next...>
 {
-  return {
-    .arguments          = left.arguments,
-    .identity           = right.identity,
-    .epilogue_arguments = {},
-  };
-}
+  using type = chain<Next...>;
+};
+
+template<class... Current, class... Next>
+struct extended_epilogue<chain<Current...>, Next...>
+{
+  using type = chain<Current..., Next...>;
+};
+
+export
+template<
+  class Operation,
+  class Combine,
+  class Identity,
+  class Epilogue,
+  class... Next
+>
+constexpr auto
+operator |(
+  reduce_stage<Operation, Combine, Identity, Epilogue> left,
+  transform_stage<chain<Next...>>                      right)
+  -> reduce_stage<
+    Operation,
+    Combine,
+    Identity,
+    typename extended_epilogue<Epilogue, Next...>::type
+  >
+{ return {.arguments = std::tuple_cat(left.arguments, right.arguments)}; }
+
+static_assert(
+  skeleton_push_of<reduce_stage<chain<>, plus, float>, float>.argument_offset() ==
+    detail::argument_offset,
+  "reduce arguments start after the input, the scratch, count and first");
+static_assert(
+  skeleton_push_of<reduce_stage<chain<>, plus, float>, float>.arguments ==
+    argument_capacity,
+  "reduce keeps 26 argument words; the identity takes the first");
+static_assert(
+  !archetype_stage<reduce_stage<chain<>, plus, std::uint32_t>, float>,
+  "the reduce identity has the array's element type");
 
 export
 template<class Combine, class Identity>
@@ -872,99 +919,6 @@ compile(transform_with_stage<Uniform, Operation>) -> std::array<
   std::array<
     std::uint32_t,
     transform_with_word_count<Element, Uniform, Operation>
-  >
-    result {};
-  std::ranges::copy(words, result.begin());
-  return result;
-}
-
-namespace detail
-{
-
-template<
-  scalar Element,
-  class Operation,
-  class Combine,
-  class Epilogue = identity
->
-  requires (
-    traceable<Operation, Element> &&
-    combinable<Combine, Element> &&
-    traceable<Epilogue, Element>)
-constexpr
-auto
-reduce_module() -> std::vector<std::uint32_t>
-{
-  constexpr auto map_slots =
-    std::tuple_size_v<typename arguments_of<Operation>::type>;
-  constexpr auto epilogue_slots =
-    std::tuple_size_v<typename arguments_of<Epilogue>::type>;
-  static_assert(
-    map_slots + epilogue_slots <= argument_capacity,
-    "fiat::reduce map and epilogue arguments together take at most 26 runtime "
-    "slots");
-
-  const std::vector<instruction> map_instructions = trace<Element, Operation>();
-  const std::vector<instruction> combine_instructions =
-    trace_binary<Element, Combine>();
-  const std::vector<instruction> epilogue_instructions =
-    trace_from_slot<Element, Epilogue, map_slots>();
-  return splice<Element>(
-    reduce_template<Element>(),
-    std::array {
-      symbol_trace {
-        .symbol       = operation_symbol,
-        .instructions = map_instructions,
-      },
-      symbol_trace {
-        .symbol       = combine_symbol,
-        .instructions = combine_instructions,
-      },
-      symbol_trace {
-        .symbol       = epilogue_symbol,
-        .instructions = epilogue_instructions,
-      },
-    });
-}
-
-} // namespace detail
-
-export template<
-  scalar Element,
-  class Operation,
-  class Combine,
-  class Epilogue = identity
->
-  requires (traceable<Operation, Element> &&
-             combinable<Combine, Element> &&
-             traceable<Epilogue, Element>)
-inline constexpr std::size_t reduce_word_count =
-  detail::reduce_module<Element, Operation, Combine, Epilogue>().size();
-
-export
-template<
-  scalar Element,
-  class Operation,
-  class Combine,
-  class Identity,
-  class Epilogue = identity
->
-  requires (
-    traceable<Operation, Element> &&
-    combinable<Combine, Element> &&
-    std::same_as<Identity, Element> &&
-    traceable<Epilogue, Element>)
-consteval auto
-compile(reduce_stage<Operation, Combine, Identity, Epilogue>) -> std::array<
-  std::uint32_t,
-  reduce_word_count<Element, Operation, Combine, Epilogue>
->
-{
-  const std::vector<std::uint32_t> words =
-    detail::reduce_module<Element, Operation, Combine, Epilogue>();
-  std::array<
-    std::uint32_t,
-    reduce_word_count<Element, Operation, Combine, Epilogue>
   >
     result {};
   std::ranges::copy(words, result.begin());
