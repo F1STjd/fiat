@@ -141,6 +141,12 @@ export struct dispatch_push
   [[nodiscard]]
   constexpr
   auto
+  argument_member() const -> std::uint32_t
+  { return ports + 2U; }
+
+  [[nodiscard]]
+  constexpr
+  auto
   size() const -> std::uint32_t
   { return argument_offset() + word_bytes * arguments; }
 
@@ -337,7 +343,12 @@ auto
 first_slot(std::index_sequence<Earlier...>) -> std::size_t
 { return (0UZ + ... + splice_slots<std::tuple_element_t<Earlier, Splices>>); }
 
-template<scalar Element, class Splice, std::size_t FirstSlot>
+template<
+  scalar Element,
+  class Splice,
+  std::size_t   FirstSlot,
+  std::uint32_t ArgumentMember
+>
 constexpr
 auto
 trace_splice() -> std::vector<instruction>
@@ -349,11 +360,21 @@ trace_splice() -> std::vector<instruction>
   }
   else if constexpr (Splice::point == splice_point::key)
   {
-    return detail::trace_from_slot<std::uint32_t, operation_type, FirstSlot>();
+    return detail::trace_from_slot<
+      std::uint32_t,
+      operation_type,
+      FirstSlot,
+      ArgumentMember
+    >();
   }
   else
   {
-    return detail::trace_from_slot<Element, operation_type, FirstSlot>();
+    return detail::trace_from_slot<
+      Element,
+      operation_type,
+      FirstSlot,
+      ArgumentMember
+    >();
   }
 }
 
@@ -372,7 +393,8 @@ stage_module(std::index_sequence<Positions...>) -> std::vector<std::uint32_t>
       Element,
       std::tuple_element_t<Positions, splices>,
       leading_slots<Stage> +
-        first_slot<splices>(std::make_index_sequence<Positions> {})
+        first_slot<splices>(std::make_index_sequence<Positions> {}),
+      dispatch_push_of<Stage, Element>.argument_member()
     >()...,
   };
   const std::array<detail::symbol_trace, sizeof...(Positions)> traces {

@@ -218,7 +218,12 @@ trace() -> std::vector<instruction>
   return std::move(target).instructions();
 }
 
-template<scalar Element, class Operation, std::size_t FirstSlot>
+template<
+  scalar Element,
+  class Operation,
+  std::size_t   FirstSlot,
+  std::uint32_t ArgumentMember = bespoke_argument_member
+>
   requires traceable<Operation, Element>
 constexpr
 auto
@@ -226,7 +231,7 @@ trace_from_slot() -> std::vector<instruction>
 {
   using argument_tuple = typename arguments_of<Operation>::type;
 
-  recorder       target {};
+  recorder       target {ArgumentMember};
   value<Element> parameter {target, target.emit_parameter(kind_of<Element>)};
   trace_call<Operation, FirstSlot>(
     target,

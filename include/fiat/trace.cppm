@@ -46,7 +46,7 @@ export enum class operation : std::uint8_t
   uniform_load,
 };
 
-inline constexpr std::uint32_t argument_member {4U};
+inline constexpr std::uint32_t bespoke_argument_member {4U};
 
 export struct instruction
 {
@@ -64,6 +64,12 @@ namespace detail
 class recorder
 {
 public:
+  constexpr recorder() = default;
+
+  explicit constexpr recorder(std::uint32_t argument_member)
+  : argument_member_ {argument_member}
+  {}
+
   constexpr
   auto
   emit_parameter(scalar_kind kind) -> std::uint32_t
@@ -73,7 +79,7 @@ public:
   auto
   emit_argument(scalar_kind kind, std::uint32_t slot) -> std::uint32_t
   {
-    const auto member = emit_constant(scalar_kind::uint32, argument_member);
+    const auto member = emit_constant(scalar_kind::uint32, argument_member_);
     const auto index  = emit_constant(scalar_kind::uint32, slot);
     const auto address =
       push(operation::argument_address, scalar_kind::uint32, member, index, 0U);
@@ -87,10 +93,10 @@ public:
   auto
   emit_uniform(scalar_kind kind, std::uint32_t slot) -> std::uint32_t
   {
-    const auto member     = emit_constant(scalar_kind::uint32, argument_member);
-    const auto lo_index   = emit_constant(scalar_kind::uint32, slot);
-    const auto hi_index   = emit_constant(scalar_kind::uint32, slot + 1U);
-    const auto shift      = emit_constant(scalar_kind::uint32, 32U);
+    const auto member   = emit_constant(scalar_kind::uint32, argument_member_);
+    const auto lo_index = emit_constant(scalar_kind::uint32, slot);
+    const auto hi_index = emit_constant(scalar_kind::uint32, slot + 1U);
+    const auto shift    = emit_constant(scalar_kind::uint32, 32U);
     const auto lo_address = push(
       operation::argument_address, scalar_kind::uint32, member, lo_index, 0U);
     const auto lo =
@@ -175,6 +181,7 @@ private:
 
   std::vector<instruction> instructions_ {};
   std::uint32_t            next_id_ {1U};
+  std::uint32_t            argument_member_ {bespoke_argument_member};
 };
 
 } // namespace detail
