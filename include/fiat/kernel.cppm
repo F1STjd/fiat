@@ -72,28 +72,6 @@ static_assert(
   sizeof(detail::scatter_push) == 48UZ,
   "fits the 128 bytes every Vulkan device guarantees");
 
-namespace detail
-{
-
-export struct histogram_push
-{
-  std::uint64_t                                input {};
-  std::uint64_t                                counts {};
-  std::uint32_t                                count {};
-  std::uint32_t                                first {};
-  std::array<std::uint32_t, argument_capacity> arguments {};
-};
-
-} // namespace detail
-
-static_assert(
-  sizeof(detail::histogram_push) ==
-    detail::argument_offset + argument_capacity * sizeof(std::uint32_t),
-  "matches the template push block");
-static_assert(
-  sizeof(detail::histogram_push) == 128UZ,
-  "fits the 128 bytes every Vulkan device guarantees");
-
 export inline constexpr std::size_t stable_scatter_argument_capacity {20UZ};
 
 static_assert(
@@ -1146,46 +1124,6 @@ compile(scatter_stage) -> std::array<std::uint32_t, scatter_word_count<Element>>
 {
   const auto words = detail::scatter_words<Element>();
   std::array<std::uint32_t, scatter_word_count<Element>> result {};
-  std::ranges::copy(words, result.begin());
-  return result;
-}
-
-namespace detail
-{
-
-template<class Key>
-  requires traceable<Key, std::uint32_t>
-constexpr
-auto
-histogram_module() -> std::vector<std::uint32_t>
-{
-  const auto instructions = trace<std::uint32_t, Key>();
-  return splice<std::uint32_t>(
-    histogram_template(),
-    std::array {
-      symbol_trace {key_symbol, instructions},
-    });
-}
-
-} // namespace detail
-
-export template<class Key>
-  requires traceable<Key, std::uint32_t>
-inline constexpr std::size_t histogram_word_count =
-  detail::histogram_module<Key>().size();
-
-export
-template<scalar Element, std::uint32_t Buckets, histogram_mode Mode, class Key>
-  requires (
-    std::same_as<Element, std::uint32_t> &&
-    traceable<Key, Element> &&
-    (Buckets >= 1U))
-consteval auto
-compile(histogram_stage<Buckets, Mode, Key>)
-  -> std::array<std::uint32_t, histogram_word_count<Key>>
-{
-  const auto words = detail::histogram_module<Key>();
-  std::array<std::uint32_t, histogram_word_count<Key>> result {};
   std::ranges::copy(words, result.begin());
   return result;
 }
