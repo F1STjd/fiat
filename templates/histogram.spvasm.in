@@ -2,8 +2,9 @@
 ; Assembled with spirv-as --target-env spv1.6, validated with spirv-val --target-env spv1.6.
 ; The splicer replaces the Import declaration of %fiat_key (uint -> uint) with the
 ; traced definition, and removes OpCapability Linkage plus the LinkageAttributes decorations.
-; Two entry points share the module: fiat_histogram (privatized: zero a Workgroup table,
-; Workgroup-scope atomic add, barrier, Device-scope merge) and fiat_histogram_global
+; Two entry points share the module: fiat_histogram (privatized: a Workgroup table zeroed by
+; its OpConstantNull initializer, which needs shaderZeroInitializeWorkgroupMemory (core in
+; Vulkan 1.3), Workgroup-scope atomic add, barrier, Device-scope merge) and fiat_histogram_global
 ; (Device-scope atomic add straight into counts). Group size is SpecId 0; bucket count
 ; is SpecId 1. Out-of-range keys (key >= buckets) are skipped.
 ; Invariant (one reader per element): an invocation reads input[i] only to add one
@@ -65,10 +66,11 @@
 %shared_array = OpTypeArray %uint %buckets
 %shared_array_pointer = OpTypePointer Workgroup %shared_array
 %shared_uint_pointer = OpTypePointer Workgroup %uint
+%zero_counts = OpConstantNull %shared_array
   %global_id = OpVariable %input_uint_3_pointer Input
    %local_id = OpVariable %input_uint_3_pointer Input
        %push = OpVariable %push_pointer PushConstant
-%shared_counts = OpVariable %shared_array_pointer Workgroup
+%shared_counts = OpVariable %shared_array_pointer Workgroup %zero_counts
     %fiat_key = OpFunction %uint None %key_type
 %key_parameter = OpFunctionParameter %uint
                OpFunctionEnd
@@ -86,20 +88,6 @@
       %input = OpLoad %element_pointer %input_member
 %counts_member = OpAccessChain %push_element_pointer %push %one
      %counts = OpLoad %element_pointer %counts_member
-               OpBranch %zero_header
-%zero_header = OpLabel
-  %zero_slot = OpPhi %uint %local %privatized_entry %zero_next %zero_continue
-  %zero_more = OpULessThan %bool %zero_slot %buckets  
-               OpLoopMerge %zero_done %zero_continue None
-               OpBranchConditional %zero_more %zero_body %zero_done
-  %zero_body = OpLabel
-%zero_pointer = OpAccessChain %shared_uint_pointer %shared_count %zero_slot
-               OpStore %zero_pointer %zero NonPrivatePointer
-  %zero_next = OpIAdd %uint %zero_slot %group_size
-               OpBranch %zero_continue
-%zero_continue = OpLabel
-               OpBranch %zero_header
-  %zero_done = OpLabel
                OpControlBarrier %workgroup %workgroup %semantics_workgroup
       %index = OpIAdd %uint %first %invocation
 %within_count = OpULessThan %bool %index %count
