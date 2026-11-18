@@ -350,12 +350,38 @@ export enum class histogram_mode : std::uint8_t
   global,
 };
 
+inline constexpr std::uint32_t privatized_bucket_limit {4'096U};
+
 export template<std::uint32_t Buckets, histogram_mode Mode, class Key>
 struct histogram_stage
 {
-  static constexpr std::uint32_t  buckets {Buckets};
-  static constexpr histogram_mode mode {Mode};
-  using key_type = Key;
+  static_assert(Buckets >= 1U, "fiat::histogram needs at least one bucket");
+  static_assert(
+    Mode == histogram_mode::global || Buckets <= privatized_bucket_limit,
+    "a privatized fiat::histogram keeps at most 4096 buckets in shared "
+    "memory; use histogram_mode::global for more");
+
+  static constexpr stage_class    kind {stage_class::sink};
+  static constexpr skeleton_kind  skeleton {skeleton_kind::histogram};
+  static constexpr stage_schedule schedule {};
+  static constexpr std::array     dispatches {
+    dispatch_rule {
+      .entry =
+        Mode == histogram_mode::privatized
+          ? histogram_entry
+          : histogram_global_entry,
+    },
+  };
+  static constexpr std::uint32_t buckets {Buckets};
+
+  template<std::same_as<std::uint32_t> Element>
+  using ports = std::tuple<
+    port<Element, port_access::read>,
+    port<Element, port_access::read_write, Buckets>
+  >;
+
+  using splices = std::tuple<splice_operation<splice_point::key, Key>>;
+
   typename arguments_of<Key>::type arguments {};
 };
 
@@ -369,7 +395,6 @@ template<
 constexpr auto
 histogram(Key, Arguments... arguments) -> histogram_stage<Buckets, Mode, Key>
 {
-  static_assert(Buckets >= 1U, "fiat::histogram needs at least one bucket");
   static_assert(
     std::is_empty_v<Key> && std::default_initializable<Key>,
     "fiat::histogram cannot read lambda captures; pass runtime values as "
@@ -395,6 +420,22 @@ histogram(Key, Arguments... arguments) -> histogram_stage<Buckets, Mode, Key>
     "fiat::histogram key must be traceable on std::uint32_t");
   return {.arguments = {arguments...}};
 }
+
+static_assert(
+    dispatch_push_of<
+      histogram_stage<16U, histogram_mode::global, identity>,
+      std::uint32_t
+    >.argument_member() == 4U,
+    "the histogram template reads its argument words from push member 4");
+static_assert(
+    skeleton_push_of<
+      histogram_stage<16U, histogram_mode::global, identity>,
+      std::uint32_t
+    >.arguments == argument_capacity,
+    "the histogram template keeps 26 argument words after the input and counts");
+static_assert(
+  !archetype_stage<histogram_stage<16U, histogram_mode::global, identity>, float>,
+  "fiat histogram stages take std::uint32_t elements");
 
 export template<std::uint32_t Buckets, class Key>
 struct tile_histogram_stage
