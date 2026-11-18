@@ -25,11 +25,8 @@ using fused_float_stage = fiat::scan_stage<
   fiat::chain<fiat::bound_operation<fiat::multiplies, float>>
 >;
 
-constexpr auto fused_float_words = fiat::compile<float>(fused_float_stage {
-  .arguments          = {},
-  .identity           = 0.0F,
-  .epilogue_arguments = {2.0F},
-});
+constexpr auto fused_float_words =
+  fiat::compile<float>(fused_float_stage {.arguments = {0.0F, 2.0F}});
 
 auto
 main() -> int

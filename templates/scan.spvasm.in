@@ -15,6 +15,8 @@
 ; Invariant (one reader per element): an invocation reads global element i only if it is the
 ; invocation that writes element i, and reads it before writing it; all cross-element data moves
 ; through workgroup memory or the context scratch, so output may be the input (in place).
+; Push block (fiat stage protocol): input @0, output @8, scratch @16, count @24, first @28
+; (unused), argument words @32; word 0 is the identity, the map and epilogue arguments follow.
                OpCapability Shader
                OpCapability PhysicalStorageBufferAddresses
                OpCapability VulkanMemoryModel
@@ -44,9 +46,9 @@
                OpMemberDecorate %push_type 0 Offset 0
                OpMemberDecorate %push_type 1 Offset 8
                OpMemberDecorate %push_type 2 Offset 16
-               OpMemberDecorate %push_type 3 Offset 20
-               OpMemberDecorate %push_type 4 Offset 24
-               OpMemberDecorate %push_type 5 Offset 120
+               OpMemberDecorate %push_type 3 Offset 24
+               OpMemberDecorate %push_type 4 Offset 28
+               OpMemberDecorate %push_type 5 Offset 32
        %void = OpTypeVoid
        %bool = OpTypeBool
       %float = OpTypeFloat 32
@@ -61,7 +63,7 @@
 %scratch_pointer = OpTypePointer PhysicalStorageBuffer %scratch_type
 %scratch_uint_pointer = OpTypePointer PhysicalStorageBuffer %uint
 %scratch_element_pointer = OpTypePointer PhysicalStorageBuffer %@ELEMENT@
-  %push_type = OpTypeStruct %element_pointer %scratch_pointer %uint %uint %argument_array %element_pointer
+  %push_type = OpTypeStruct %element_pointer %element_pointer %scratch_pointer %uint %uint %argument_array
 %push_pointer = OpTypePointer PushConstant %push_type
 %push_uint_pointer = OpTypePointer PushConstant %uint
 %push_element_pointer = OpTypePointer PushConstant %element_pointer
@@ -75,7 +77,7 @@
         %one = OpConstant %uint 1
         %two = OpConstant %uint 2
       %three = OpConstant %uint 3
-       %five = OpConstant %uint 5
+%argument_member_index = OpConstant %uint 5
      %device = OpConstant %uint 1
   %workgroup = OpConstant %uint 2
 ; 24840 = AcquireRelease | WorkgroupMemory | MakeAvailable | MakeVisible
@@ -158,12 +160,12 @@
 %upsweep_groups = OpLoad %uint %upsweep_groups_pointer
 %upsweep_input_member = OpAccessChain %push_element_pointer %push %zero
 %upsweep_input = OpLoad %element_pointer %upsweep_input_member
-%upsweep_scratch_member = OpAccessChain %push_scratch_pointer %push %one
+%upsweep_scratch_member = OpAccessChain %push_scratch_pointer %push %two
 %upsweep_scratch = OpLoad %scratch_pointer %upsweep_scratch_member
 %upsweep_counter_pointer = OpAccessChain %scratch_uint_pointer %upsweep_scratch %zero
-%upsweep_count_member = OpAccessChain %push_uint_pointer %push %two
+%upsweep_count_member = OpAccessChain %push_uint_pointer %push %three
 %upsweep_count = OpLoad %uint %upsweep_count_member
-%upsweep_identity_member = OpAccessChain %push_uint_pointer %push %three
+%upsweep_identity_member = OpAccessChain %push_uint_pointer %push %argument_member_index %zero
 %upsweep_identity_bits = OpLoad %uint %upsweep_identity_member
 %upsweep_identity = OpBitcast %@ELEMENT@ %upsweep_identity_bits
 %upsweep_last_lane = OpISub %uint %group_size %one
@@ -300,14 +302,14 @@
 %downsweep_groups = OpLoad %uint %downsweep_groups_pointer
 %downsweep_input_member = OpAccessChain %push_element_pointer %push %zero
 %downsweep_input = OpLoad %element_pointer %downsweep_input_member
-%downsweep_scratch_member = OpAccessChain %push_scratch_pointer %push %one
+%downsweep_scratch_member = OpAccessChain %push_scratch_pointer %push %two
 %downsweep_scratch = OpLoad %scratch_pointer %downsweep_scratch_member
-%downsweep_count_member = OpAccessChain %push_uint_pointer %push %two
+%downsweep_count_member = OpAccessChain %push_uint_pointer %push %three
 %downsweep_count = OpLoad %uint %downsweep_count_member
-%downsweep_identity_member = OpAccessChain %push_uint_pointer %push %three
+%downsweep_identity_member = OpAccessChain %push_uint_pointer %push %argument_member_index %zero
 %downsweep_identity_bits = OpLoad %uint %downsweep_identity_member
 %downsweep_identity = OpBitcast %@ELEMENT@ %downsweep_identity_bits
-%downsweep_output_member = OpAccessChain %push_element_pointer %push %five
+%downsweep_output_member = OpAccessChain %push_element_pointer %push %one
 %downsweep_output = OpLoad %element_pointer %downsweep_output_member
 %downsweep_last_lane = OpISub %uint %group_size %one
 %downsweep_last_slot = OpAccessChain %shared_element_pointer %shared_values %downsweep_last_lane

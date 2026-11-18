@@ -52,36 +52,6 @@ static_assert(
   sizeof(detail::transform_push) == 128UZ,
   "fits the 128 bytes every Vulkan device guarantees");
 
-export inline constexpr std::size_t scan_argument_capacity {
-  argument_capacity - 2UZ
-};
-static_assert(
-  scan_argument_capacity == 24UZ,
-  "the scan output pointer takes the last two of the 26 argument words");
-
-namespace detail
-{
-
-export struct scan_push
-{
-  std::uint64_t                                     input {};
-  std::uint64_t                                     scratch {};
-  std::uint32_t                                     count {};
-  std::uint32_t                                     identity {};
-  std::array<std::uint32_t, scan_argument_capacity> arguments {};
-  std::uint64_t                                     output {};
-};
-
-} // namespace detail
-
-static_assert(
-  detail::argument_offset + scan_argument_capacity * sizeof(std::uint32_t) ==
-    120UZ,
-  "the scan output pointer is push member 5 at offset 120");
-static_assert(
-  sizeof(detail::scan_push) == 128UZ,
-  "fits the 128 bytes every Vulkan device guarantees");
-
 namespace detail
 {
 
@@ -282,9 +252,47 @@ export template<
 >
 struct scan_stage
 {
-  typename arguments_of<Operation>::type arguments {};
-  Identity                               identity {};
-  typename arguments_of<Epilogue>::type  epilogue_arguments {};
+  static constexpr stage_class   kind {stage_class::scan};
+  static constexpr skeleton_kind skeleton {
+    Mode == scan_mode::inclusive
+      ? skeleton_kind::inclusive_scan
+      : skeleton_kind::exclusive_scan,
+  };
+  static constexpr stage_schedule schedule {};
+  static constexpr std::array     dispatches {
+    dispatch_rule {
+      .entry          = scan_upsweep_entry,
+      .extent         = dispatch_extent::grid_stride,
+      .maximum_groups = detail::reduce_group_limit,
+    },
+    dispatch_rule {
+      .entry          = scan_downsweep_entry,
+      .extent         = dispatch_extent::grid_stride,
+      .maximum_groups = detail::reduce_group_limit,
+    },
+  };
+  static constexpr workspace_sizes workspace {
+    .scratch_bytes = detail::reduce_scratch_bytes,
+  };
+
+  template<std::same_as<Identity> Element>
+  using ports = std::tuple<
+    port<Element, port_access::read>,
+    port<Element, port_access::write>
+  >;
+
+  using leading_arguments = std::tuple<Identity>;
+
+  using splices = std::tuple<
+    splice_operation<splice_point::operation, Operation>,
+    splice_operation<splice_point::combine, Combine>,
+    splice_operation<splice_point::epilogue, Epilogue>
+  >;
+
+  decltype(std::tuple_cat(
+    std::declval<leading_arguments>(),
+    std::declval<typename arguments_of<Operation>::type>(),
+    std::declval<typename arguments_of<Epilogue>::type>())) arguments {};
 };
 
 export template<class Compare, class Threshold>
@@ -828,11 +836,7 @@ inclusive_scan(Combine, Identity identity)
     std::tuple_size_v<typename arguments_of<Combine>::type> == 0UZ,
     "fiat::inclusive_scan combine operations take no runtime arguments; fuse a "
     "fiat::transform before the scan instead");
-  return {
-    .arguments          = {},
-    .identity           = identity,
-    .epilogue_arguments = {},
-  };
+  return {.arguments = {identity}};
 }
 
 export
@@ -852,11 +856,7 @@ exclusive_scan(Combine, Identity identity)
     std::tuple_size_v<typename arguments_of<Combine>::type> == 0UZ,
     "fiat::exclusive_scan combine operations take no runtime arguments; fuse a "
     "fiat::transform before the scan instead");
-  return {
-    .arguments          = {},
-    .identity           = identity,
-    .epilogue_arguments = {},
-  };
+  return {.arguments = {identity}};
 }
 
 export
@@ -866,17 +866,49 @@ operator |(
   transform_stage<chain<Left...>>              left,
   scan_stage<chain<>, Combine, Identity, Mode> right)
   -> scan_stage<chain<Left...>, Combine, Identity, Mode>
-{
-  static_assert(
-    std::tuple_size_v<typename chain<Left...>::argument_tuple> <=
-      scan_argument_capacity,
-    "a fiat::transform fused into a scan takes at most 24 runtime arguments");
-  return {
-    .arguments          = left.arguments,
-    .identity           = right.identity,
-    .epilogue_arguments = {},
-  };
-}
+{ return {.arguments = std::tuple_cat(right.arguments, left.arguments)}; }
+
+export
+template<
+  class Operation,
+  class Combine,
+  class Identity,
+  scan_mode Mode,
+  class Epilogue,
+  class... Next
+>
+constexpr auto
+operator |(
+  scan_stage<Operation, Combine, Identity, Mode, Epilogue> left,
+  transform_stage<chain<Next...>>                          right)
+  -> scan_stage<
+    Operation,
+    Combine,
+    Identity,
+    Mode,
+    typename extended_epilogue<Epilogue, Next...>::type
+  >
+{ return {.arguments = std::tuple_cat(left.arguments, right.arguments)}; }
+
+static_assert(
+    skeleton_push_of<scan_stage<chain<>, plus, float, scan_mode::inclusive>, float>
+        .argument_offset() == 32U,
+    "scan arguments start after the input, the output, the scratch, count and "
+    "first");
+static_assert(
+    skeleton_push_of<scan_stage<chain<>, plus, float, scan_mode::inclusive>, float>
+        .arguments == 24U,
+    "scan keeps 24 argument words; the identity takes the first");
+static_assert(
+    dispatch_push_of<scan_stage<chain<>, plus, float, scan_mode::inclusive>, float>
+        .argument_member() == 5U,
+    "the scan template reads its argument words from push member 5");
+static_assert(
+  !archetype_stage<
+    scan_stage<chain<>, plus, std::uint32_t, scan_mode::inclusive>,
+    float
+  >,
+  "the scan identity has the array's element type");
 
 namespace detail
 {
@@ -919,103 +951,6 @@ compile(transform_with_stage<Uniform, Operation>) -> std::array<
   std::array<
     std::uint32_t,
     transform_with_word_count<Element, Uniform, Operation>
-  >
-    result {};
-  std::ranges::copy(words, result.begin());
-  return result;
-}
-
-namespace detail
-{
-
-template<
-  scalar Element,
-  class Operation,
-  class Combine,
-  scan_mode Mode,
-  class Epilogue = fiat::identity
->
-  requires (
-    traceable<Operation, Element> &&
-    combinable<Combine, Element> &&
-    traceable<Epilogue, Element>)
-constexpr
-auto
-scan_module() -> std::vector<std::uint32_t>
-{
-  constexpr auto map_slots =
-    std::tuple_size_v<typename arguments_of<Operation>::type>;
-  constexpr auto epilogue_slots =
-    std::tuple_size_v<typename arguments_of<Epilogue>::type>;
-  static_assert(
-    map_slots + epilogue_slots <= scan_argument_capacity,
-    "fiat scan map and epilogue arguments together take at most 24 runtime "
-    "slots");
-
-  const std::vector<instruction> map_instructions = trace<Element, Operation>();
-  const std::vector<instruction> combine_instructions =
-    trace_binary<Element, Combine>();
-  const std::vector<instruction> epilogue_instructions =
-    trace_from_slot<Element, Epilogue, map_slots>();
-
-  return splice<Element>(
-    scan_template<Element, Mode>(),
-    std::array {
-      symbol_trace {
-        .symbol       = operation_symbol,
-        .instructions = map_instructions,
-      },
-      symbol_trace {
-        .symbol       = combine_symbol,
-        .instructions = combine_instructions,
-      },
-      symbol_trace {
-        .symbol       = epilogue_symbol,
-        .instructions = epilogue_instructions,
-      },
-    });
-}
-
-} // namespace detail
-
-export template<
-  scalar Element,
-  class Operation,
-  class Combine,
-  scan_mode Mode,
-  class Epilogue = fiat::identity
->
-  requires (traceable<Operation, Element> &&
-             combinable<Combine, Element> &&
-             traceable<Epilogue, Element>)
-inline constexpr std::size_t scan_word_count =
-  detail::scan_module<Element, Operation, Combine, Mode, Epilogue>().size();
-
-export
-template<
-  scalar Element,
-  class Operation,
-  class Combine,
-  class Identity,
-  scan_mode Mode,
-  class Epilogue
->
-  requires (
-    traceable<Operation, Element> &&
-    combinable<Combine, Element> &&
-    std::same_as<Identity, Element> &&
-    traceable<Epilogue, Element>)
-consteval auto
-compile(scan_stage<Operation, Combine, Identity, Mode, Epilogue>) -> std::array<
-  std::uint32_t,
-  scan_word_count<Element, Operation, Combine, Mode, Epilogue>
->
-{
-  const std::vector<std::uint32_t> words =
-    detail::scan_module<Element, Operation, Combine, Mode, Epilogue>();
-  std::array<
-    std::uint32_t,
-    scan_word_count<Element, Operation, Combine, Mode, Epilogue>
   >
     result {};
   std::ranges::copy(words, result.begin());
