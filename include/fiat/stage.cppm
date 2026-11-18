@@ -27,11 +27,12 @@ export enum class port_access : std::uint8_t
   read_write,
 };
 
-export template<scalar Element, port_access Access>
+export template<scalar Element, port_access Access, std::uint32_t Size = 0U>
 struct port
 {
   using element_type = Element;
-  static constexpr port_access access {Access};
+  static constexpr port_access   access {Access};
+  static constexpr std::uint32_t size {Size};
 };
 
 export struct stage_schedule
@@ -160,8 +161,8 @@ export struct dispatch_push
 template<class Type>
 inline constexpr bool is_port {false};
 
-template<scalar Element, port_access Access>
-inline constexpr bool is_port<port<Element, Access>> {true};
+template<scalar Element, port_access Access, std::uint32_t Size>
+inline constexpr bool is_port<port<Element, Access, Size>> {true};
 
 template<class Ports>
 inline constexpr bool is_port_tuple {false};
