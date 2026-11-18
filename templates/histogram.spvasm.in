@@ -8,6 +8,8 @@
 ; is SpecId 1. Out-of-range keys (key >= buckets) are skipped.
 ; Invariant (one reader per element): an invocation reads input[i] only to add one
 ; to counts[key]; counts lives in a different buffer.
+; Push block (fiat stage protocol): input @0, counts @8, count @16, first @20, argument
+; words @24; the key arguments start at word 0.
                OpCapability Shader
                OpCapability PhysicalStorageBufferAddresses
                OpCapability VulkanMemoryModel
@@ -16,7 +18,7 @@
                OpCapability Linkage
        %glsl = OpExtInstImport "GLSL.std.450"
                OpMemoryModel PhysicalStorageBuffer64 Vulkan
-               OpEntryPoint GLCompute %privatized "fiat_histogram" %global_id %local_id %push %shared_hist
+               OpEntryPoint GLCompute %privatized "fiat_histogram" %global_id %local_id %push %shared_counts
                OpEntryPoint GLCompute %global "fiat_histogram_global" %global_id %push
                OpExecutionModeId %privatized LocalSizeId %group_size %one %one
                OpExecutionModeId %global LocalSizeId %group_size %one %one
@@ -66,16 +68,16 @@
   %global_id = OpVariable %input_uint_3_pointer Input
    %local_id = OpVariable %input_uint_3_pointer Input
        %push = OpVariable %push_pointer PushConstant
-%shared_hist = OpVariable %shared_array_pointer Workgroup
+%shared_counts = OpVariable %shared_array_pointer Workgroup
     %fiat_key = OpFunction %uint None %key_type
 %key_parameter = OpFunctionParameter %uint
                OpFunctionEnd
 %privatized = OpFunction %void None %main_type
- %priv_entry = OpLabel
-  %local_vec = OpLoad %uint_3 %local_id
-      %local = OpCompositeExtract %uint %local_vec 0
- %global_vec = OpLoad %uint_3 %global_id
-   %global_x = OpCompositeExtract %uint %global_vec 0
+%privatized_entry = OpLabel
+%local_vector = OpLoad %uint_3 %local_id
+      %local = OpCompositeExtract %uint %local_vector 0
+%invocation_vector = OpLoad %uint_3 %global_id
+%invocation = OpCompositeExtract %uint %invocation_vector 0
 %first_member = OpAccessChain %push_uint_pointer %push %three
       %first = OpLoad %uint %first_member
 %count_member = OpAccessChain %push_uint_pointer %push %two
@@ -86,32 +88,32 @@
      %counts = OpLoad %element_pointer %counts_member
                OpBranch %zero_header
 %zero_header = OpLabel
-  %zero_slot = OpPhi %uint %local %priv_entry %zero_next %zero_continue
+  %zero_slot = OpPhi %uint %local %privatized_entry %zero_next %zero_continue
   %zero_more = OpULessThan %bool %zero_slot %buckets  
                OpLoopMerge %zero_done %zero_continue None
                OpBranchConditional %zero_more %zero_body %zero_done
   %zero_body = OpLabel
-   %zero_ptr = OpAccessChain %shared_uint_pointer %shared_hist %zero_slot
-               OpStore %zero_ptr %zero NonPrivatePointer
+%zero_pointer = OpAccessChain %shared_uint_pointer %shared_count %zero_slot
+               OpStore %zero_pointer %zero NonPrivatePointer
   %zero_next = OpIAdd %uint %zero_slot %group_size
                OpBranch %zero_continue
 %zero_continue = OpLabel
                OpBranch %zero_header
   %zero_done = OpLabel
                OpControlBarrier %workgroup %workgroup %semantics_workgroup
-      %index = OpIAdd %uint %first %global_x
-   %in_range = OpULessThan %bool %index %count
+      %index = OpIAdd %uint %first %invocation
+%within_count = OpULessThan %bool %index %count
                OpSelectionMerge %after_count None
-               OpBranchConditional %in_range %count_body %after_count
+               OpBranchConditional %within_count %count_body %after_count
  %count_body = OpLabel
- %source_ptr = OpPtrAccessChain %element_pointer %input %index
-     %source = OpLoad %uint %source_ptr Aligned 4
+ %source_pointer = OpPtrAccessChain %element_pointer %input %index
+     %source = OpLoad %uint %source_pointer Aligned 4
      %bucket = OpFunctionCall %uint %fiat_key %source
- %in_buckets = OpULessThan %bool %bucket %buckets
+%within_buckets = OpULessThan %bool %bucket %buckets
                OpSelectionMerge %after_atomic None
-               OpBranchConditional %in_buckets %atomic_body %after_atomic
+               OpBranchConditional %within_buckets %atomic_body %after_atomic
 %atomic_body = OpLabel
-%shared_slot = OpAccessChain %shared_uint_pointer %shared_hist %bucket
+%shared_slot = OpAccessChain %shared_uint_pointer %shared_counts %bucket
     %ignored = OpAtomicIAdd %uint %shared_slot %workgroup %semantics_workgroup %one
                OpBranch %after_atomic
 %after_atomic = OpLabel
@@ -125,10 +127,10 @@
                OpLoopMerge %merge_done %merge_continue None
                OpBranchConditional %merge_more %merge_body %merge_done
  %merge_body = OpLabel
-%shared_val_ptr = OpAccessChain %shared_uint_pointer %shared_hist %merge_slot
- %shared_val = OpLoad %uint %shared_val_ptr NonPrivatePointer
+%shared_value_pointer = OpAccessChain %shared_uint_pointer %shared_counts %merge_slot
+%shared_value = OpLoad %uint %shared_value_pointer NonPrivatePointer
 %counts_slot = OpPtrAccessChain %element_pointer %counts %merge_slot
-    %merged = OpAtomicIAdd %uint %counts_slot %device %semantics_device %shared_val
+     %merged = OpAtomicIAdd %uint %counts_slot %device %semantics_device %shared_value
  %merge_next = OpIAdd %uint %merge_slot %group_size
                OpBranch %merge_continue
 %merge_continue = OpLabel
@@ -137,34 +139,34 @@
                OpReturn
                OpFunctionEnd
      %global = OpFunction %void None %main_type
- %glob_entry = OpLabel
-   %glob_vec = OpLoad %uint_3 %global_id
-     %glob_x = OpCompositeExtract %uint %glob_vec 0
-%glob_first_member = OpAccessChain %push_uint_pointer %push %three
- %glob_first = OpLoad %uint %glob_first_member
- %glob_index = OpIAdd %uint %glob_first %glob_x
-%glob_count_member = OpAccessChain %push_uint_pointer %push %two
- %glob_count = OpLoad %uint %glob_count_member
-%glob_in_range = OpULessThan %bool %glob_index %glob_count
-               OpSelectionMerge %glob_done None
-               OpBranchConditional %glob_in_range %glob_body %glob_done
-  %glob_body = OpLabel
-%glob_input_member = OpAccessChain %push_element_pointer %push %zero
- %glob_input = OpLoad %element_pointer %glob_input_member
-%glob_source_ptr = OpPtrAccessChain %element_pointer %glob_input %glob_index
-%glob_source = OpLoad %uint %glob_source_ptr Aligned 4
-%glob_bucket = OpFunctionCall %uint %fiat_key %glob_source
-%glob_in_buckets = OpULessThan %bool %glob_bucket %buckets
-               OpSelectionMerge %glob_after None
-               OpBranchConditional %glob_in_buckets %glob_atomic %glob_after
-%glob_atomic = OpLabel
-%glob_counts_member = OpAccessChain %push_element_pointer %push %one
-%glob_counts = OpLoad %element_pointer %glob_counts_member
-%glob_counts_slot = OpPtrAccessChain %element_pointer %glob_counts %glob_bucket
-  %glob_added = OpAtomicIAdd %uint %glob_counts_slot %device %semantics_device %one
-               OpBranch %glob_after
- %glob_after = OpLabel
-               OpBranch %glob_done
-  %glob_done = OpLabel
+%global_entry = OpLabel
+%global_invocation_vector = OpLoad %uint_3 %global_id
+%global_invocation = OpCompositeExtract %uint %global_invocation_vector 0
+%global_first_member = OpAccessChain %push_uint_pointer %push %three
+%global_first = OpLoad %uint %global_first_member
+%global_index = OpIAdd %uint %global_first %global_invocation
+%global_count_member = OpAccessChain %push_uint_pointer %push %two
+%global_count = OpLoad %uint %global_count_member
+%global_within_count = OpULessThan %bool %global_index %global_count
+               OpSelectionMerge %global_done None
+               OpBranchConditional %global_within_count %global_body %global_done
+%global_body = OpLabel
+%global_input_member = OpAccessChain %push_element_pointer %push %zero
+%global_input = OpLoad %element_pointer %global_input_member
+%global_source_pointer = OpPtrAccessChain %element_pointer %global_input %global_index
+%global_source = OpLoad %uint %global_source_pointer Aligned 4
+%global_bucket = OpFunctionCall %uint %fiat_key %global_source
+%global_within_buckets = OpULessThan %bool %global_bucket %buckets
+               OpSelectionMerge %global_after None
+               OpBranchConditional %global_within_buckets %global_atomic %global_after
+%global_atomic = OpLabel
+%global_counts_member = OpAccessChain %push_element_pointer %push %one
+%global_counts = OpLoad %element_pointer %global_counts_member
+%global_counts_slot = OpPtrAccessChain %element_pointer %global_counts %global_bucket
+%global_added = OpAtomicIAdd %uint %global_counts_slot %device %semantics_device %one
+               OpBranch %global_after
+%global_after = OpLabel
+               OpBranch %global_done
+%global_done = OpLabel
                OpReturn
                OpFunctionEnd
