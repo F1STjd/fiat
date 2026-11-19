@@ -372,6 +372,22 @@ scan_template() -> std::span<const std::uint32_t>
   }
 }
 
+template<scalar Element>
+consteval
+auto
+scatter_template() -> std::span<const std::uint32_t>
+{
+  if constexpr (std::same_as<Element, float>) { return scatter_float_words; }
+  else if constexpr (std::same_as<Element, std::int32_t>)
+  {
+    return scatter_int_words;
+  }
+  else
+  {
+    return scatter_uint_words;
+  }
+}
+
 consteval
 auto
 histogram_template() -> std::span<const std::uint32_t>
