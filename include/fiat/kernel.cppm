@@ -52,26 +52,6 @@ static_assert(
   sizeof(detail::transform_push) == 128UZ,
   "fits the 128 bytes every Vulkan device guarantees");
 
-namespace detail
-{
-
-export struct scatter_push
-{
-  std::uint64_t input {};
-  std::uint64_t output {};
-  std::uint32_t count {};
-  std::uint32_t first {};
-  std::uint64_t flags {};
-  std::uint64_t indices {};
-  std::uint64_t count_out {};
-};
-
-} // namespace detail
-
-static_assert(
-  sizeof(detail::scatter_push) == 48UZ,
-  "fits the 128 bytes every Vulkan device guarantees");
-
 export inline constexpr std::size_t stable_scatter_argument_capacity {20UZ};
 
 static_assert(
@@ -285,7 +265,28 @@ struct compact_stage
   Threshold threshold {};
 };
 
-export struct scatter_stage {};
+export struct scatter_stage
+{
+  static constexpr stage_class    kind {stage_class::permute};
+  static constexpr skeleton_kind  skeleton {skeleton_kind::scatter};
+  static constexpr stage_schedule schedule {};
+  static constexpr std::array     dispatches {
+    dispatch_rule {.entry = scatter_entry},
+  };
+
+  template<scalar Element>
+  using ports = std::tuple<
+    port<Element, port_access::read>,
+    port<Element, port_access::write>,
+    port<std::uint32_t, port_access::read>,
+    port<std::uint32_t, port_access::read>,
+    port<std::uint32_t, port_access::write, 1U>
+  >;
+
+  using splices = std::tuple<>;
+
+  std::tuple<> arguments {};
+};
 
 export
 template<class Compare, class Threshold>
@@ -1077,22 +1078,6 @@ predicate_words() -> std::span<const std::uint32_t>
   }
 }
 
-template<scalar Element>
-consteval
-auto
-scatter_words() -> std::span<const std::uint32_t>
-{
-  if constexpr (std::same_as<Element, float>) { return scatter_float_words; }
-  else if constexpr (std::same_as<Element, std::int32_t>)
-  {
-    return scatter_int_words;
-  }
-  else
-  {
-    return scatter_uint_words;
-  }
-}
-
 } // namespace detail
 
 export template<scalar Element, class Compare>
@@ -1109,21 +1094,6 @@ compile(predicate_stage<Compare, Threshold>)
 {
   auto words = detail::predicate_words<Element, Compare>();
   std::array<std::uint32_t, predicate_word_count<Element, Compare>> result {};
-  std::ranges::copy(words, result.begin());
-  return result;
-}
-
-export template<scalar Element>
-inline constexpr std::size_t scatter_word_count =
-  detail::scatter_words<Element>().size();
-
-export
-template<scalar Element>
-consteval auto
-compile(scatter_stage) -> std::array<std::uint32_t, scatter_word_count<Element>>
-{
-  const auto words = detail::scatter_words<Element>();
-  std::array<std::uint32_t, scatter_word_count<Element>> result {};
   std::ranges::copy(words, result.begin());
   return result;
 }
