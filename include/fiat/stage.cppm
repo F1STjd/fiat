@@ -58,6 +58,7 @@ export enum class splice_point : std::uint8_t
   combine,
   epilogue,
   key,
+  predicate,
 };
 
 export template<splice_point Point, class Operation>
@@ -182,6 +183,8 @@ concept traceable_splice =
      combinable<typename Splice::operation_type, Element>) ||
     (Splice::point == splice_point::key &&
       traceable<typename Splice::operation_type, std::uint32_t>) ||
+    (Splice::point == splice_point::predicate &&
+      traceable_predicate<typename Splice::operation_type, Element>) ||
     ((Splice::point == splice_point::operation ||
        Splice::point == splice_point::epilogue) &&
       traceable<typename Splice::operation_type, Element>));
@@ -329,6 +332,7 @@ symbol_of(splice_point point) -> std::string_view
   case splice_point::combine   : return combine_symbol;
   case splice_point::epilogue  : return epilogue_symbol;
   case splice_point::key       : return key_symbol;
+  case splice_point::predicate : return predicate_symbol;
   }
   std::unreachable();
 }
@@ -367,6 +371,10 @@ trace_splice() -> std::vector<instruction>
       FirstSlot,
       ArgumentMember
     >();
+  }
+  else if constexpr (Splice::point == splice_point::predicate)
+  {
+    return trace_predicate<Element, operation_type, FirstSlot, ArgumentMember>();
   }
   else
   {
