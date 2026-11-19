@@ -538,6 +538,56 @@ constexpr auto
 max(const Left& left, const value<Type>& right) -> value<Type>
 { return combine<Type>(operation::maximum, left, right); }
 
+template<scalar Type, class Right>
+constexpr
+auto
+compare(comparison relation, const value<Type>& left, const Right& right)
+  -> value<bool>
+{
+  auto&      target   = left.target();
+  const auto right_id = operand_id<Type>(target, right);
+  return value<bool> {
+    target,
+    target.emit_compare(relation, kind_of<Type>, left.id(), right.id()),
+  };
+}
+
+export
+template<scalar Type, operand_for<Type> Right>
+constexpr auto
+operator >(const value<Type>& left, const Right& right) -> value<bool>
+{ return compare(comparison::greater, left, right); }
+
+export
+template<scalar Type, operand_for<Type> Right>
+constexpr auto
+operator >=(const value<Type>& left, const Right& right) -> value<bool>
+{ return compare(comparison::greater_equal, left, right); }
+
+export
+template<scalar Type, operand_for<Type> Right>
+constexpr auto
+operator <(const value<Type>& left, const Right& right) -> value<bool>
+{ return compare(comparison::less, left, right); }
+
+export
+template<scalar Type, operand_for<Type> Right>
+constexpr auto
+operator <=(const value<Type>& left, const Right& right) -> value<bool>
+{ return compare(comparison::less_equal, left, right); }
+
+export
+template<scalar Type, operand_for<Type> Right>
+constexpr auto
+operator ==(const value<Type>& left, const Right& right) -> value<bool>
+{ return compare(comparison::equal, left, right); }
+
+export
+template<scalar Type, operand_for<Type> Right>
+constexpr auto
+operator !=(const value<Type>& left, const Right& right) -> value<bool>
+{ return compare(comparison::not_equal, left, right); }
+
 export
 auto
 operator -(const value<std::uint32_t>&) -> value<std::uint32_t> = delete(
