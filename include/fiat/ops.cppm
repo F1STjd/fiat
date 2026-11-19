@@ -170,13 +170,4 @@ export struct not_equal
   { return left != right; }
 };
 
-export template<class Compare>
-concept compare_operation =
-  std::same_as<Compare, greater> ||
-  std::same_as<Compare, greater_equal> ||
-  std::same_as<Compare, less> ||
-  std::same_as<Compare, less_equal> ||
-  std::same_as<Compare, equal> ||
-  std::same_as<Compare, not_equal>;
-
 } // namespace fiat
