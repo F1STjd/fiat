@@ -253,16 +253,42 @@ struct scan_stage
     std::declval<typename arguments_of<Epilogue>::type>())) arguments {};
 };
 
-export template<class Compare, class Threshold>
-struct predicate_stage
+export template<class Predicate, class... Arguments>
+struct bound_predicate
 {
-  Threshold threshold {};
+  using argument_tuple = std::tuple<Arguments...>;
+
+  template<scalar Element, class... Values>
+    requires (
+      (std::same_as<Values, value<Arguments>> && ...) &&
+      traceable_predicate_call<Predicate, Element, Arguments...>)
+  constexpr
+  auto
+  operator ()(const value<Element>& operand, const Values&... arguments) const
+    -> value<bool>
+  { return Predicate {}(operand, arguments...); }
 };
 
-export template<class Compare, class Threshold>
-struct compact_stage
+export template<class Predicate>
+struct predicate_stage
 {
-  Threshold threshold {};
+  static constexpr stage_class    kind {stage_class::elementwise};
+  static constexpr skeleton_kind  skeleton {skeleton_kind::predicate};
+  static constexpr stage_schedule schedule {};
+  static constexpr std::array     dispatches {
+    dispatch_rule {.entry = predicate_entry},
+  };
+
+  template<scalar Element>
+  using ports = std::tuple<
+    port<Element, port_access::read>,
+    port<std::uint32_t, port_access::write>
+  >;
+
+  using splices =
+    std::tuple<splice_operation<splice_point::predicate, Predicate>>;
+
+  typename arguments_of<Predicate>::type arguments {};
 };
 
 export struct scatter_stage
@@ -289,33 +315,22 @@ export struct scatter_stage
 };
 
 export
-template<class Compare, class Threshold>
+template<class Predicate, class... Arguments>
 constexpr auto
-predicate(Compare, Threshold threshold) -> predicate_stage<Compare, Threshold>
+predicate(Predicate, Arguments... arguments)
+  -> predicate_stage<bound_predicate<Predicate, Arguments...>>
 {
   static_assert(
-    compare_operation<Compare>,
-    "fiat::predicate compare must be greater, greater_equal, less, less_equal, "
-    "or not_equal");
+    std::is_empty_v<Predicate>,
+    "fiat::predicate cannot read lambda captures; pass runtime values as "
+    "arguments: fiat::predicate(predicate, value)");
   static_assert(
-    scalar<Threshold>,
-    "fiat::predicate threshold must be float, std::int32_t or std::uint32_t");
-  return {.threshold = threshold};
-}
-
-export
-template<class Compare, class Threshold>
-constexpr auto
-compact(Compare, Threshold threshold) -> compact_stage<Compare, Threshold>
-{
+    (scalar<Arguments> && ...),
+    "fiat::predicate arguments must be float, std::int32_t or std::uint32_t");
   static_assert(
-    compare_operation<Compare>,
-    "fiat::compact compare must be greater, greater_equal, less, less_equal, "
-    "or not_equal");
-  static_assert(
-    scalar<Threshold>,
-    "fiat::compact threshold must be float, std::int32_t or std::uint32_t");
-  return {.threshold = threshold};
+    sizeof...(Arguments) <= argument_capacity,
+    "fiat::predicate takes at most 26 runtime arguments");
+  return {.arguments = {arguments...}};
 }
 
 export constexpr
@@ -973,127 +988,6 @@ compile(transform_with_stage<Uniform, Operation>) -> std::array<
     transform_with_word_count<Element, Uniform, Operation>
   >
     result {};
-  std::ranges::copy(words, result.begin());
-  return result;
-}
-
-namespace detail
-{
-
-template<scalar Element, class Compare>
-  requires compare_operation<Compare>
-consteval
-auto
-predicate_words() -> std::span<const std::uint32_t>
-{
-  if constexpr (std::same_as<Compare, greater>)
-  {
-    if constexpr (std::same_as<Element, float>)
-    {
-      return predicate_greater_float_words;
-    }
-    else if constexpr (std::same_as<Element, std::int32_t>)
-    {
-      return predicate_greater_int_words;
-    }
-    else
-    {
-      return predicate_greater_uint_words;
-    }
-  }
-  else if constexpr (std::same_as<Compare, greater_equal>)
-  {
-    if constexpr (std::same_as<Element, float>)
-    {
-      return predicate_greater_equal_float_words;
-    }
-    else if constexpr (std::same_as<Element, std::int32_t>)
-    {
-      return predicate_greater_equal_int_words;
-    }
-    else
-    {
-      return predicate_greater_equal_uint_words;
-    }
-  }
-  else if constexpr (std::same_as<Compare, less>)
-  {
-    if constexpr (std::same_as<Element, float>)
-    {
-      return predicate_less_float_words;
-    }
-    else if constexpr (std::same_as<Element, std::int32_t>)
-    {
-      return predicate_less_int_words;
-    }
-    else
-    {
-      return predicate_less_uint_words;
-    }
-  }
-  else if constexpr (std::same_as<Compare, less_equal>)
-  {
-    if constexpr (std::same_as<Element, float>)
-    {
-      return predicate_less_equal_float_words;
-    }
-    else if constexpr (std::same_as<Element, std::int32_t>)
-    {
-      return predicate_less_equal_int_words;
-    }
-    else
-    {
-      return predicate_less_equal_uint_words;
-    }
-  }
-  else if constexpr (std::same_as<Compare, equal>)
-  {
-    if constexpr (std::same_as<Element, float>)
-    {
-      return predicate_equal_float_words;
-    }
-    else if constexpr (std::same_as<Element, std::int32_t>)
-    {
-      return predicate_equal_int_words;
-    }
-    else
-    {
-      return predicate_equal_uint_words;
-    }
-  }
-  else if constexpr (std::same_as<Compare, not_equal>)
-  {
-    if constexpr (std::same_as<Element, float>)
-    {
-      return predicate_not_equal_float_words;
-    }
-    else if constexpr (std::same_as<Element, std::int32_t>)
-    {
-      return predicate_not_equal_int_words;
-    }
-    else
-    {
-      return predicate_not_equal_uint_words;
-    }
-  }
-}
-
-} // namespace detail
-
-export template<scalar Element, class Compare>
-  requires compare_operation<Compare>
-inline constexpr std::size_t predicate_word_count =
-  detail::predicate_words<Element, Compare>().size();
-
-export
-template<scalar Element, class Compare, class Threshold>
-  requires (compare_operation<Compare> && std::same_as<Threshold, Element>)
-consteval auto
-compile(predicate_stage<Compare, Threshold>)
-  -> std::array<std::uint32_t, predicate_word_count<Element, Compare>>
-{
-  auto words = detail::predicate_words<Element, Compare>();
-  std::array<std::uint32_t, predicate_word_count<Element, Compare>> result {};
   std::ranges::copy(words, result.begin());
   return result;
 }
