@@ -50,6 +50,7 @@ export enum class skeleton_kind : std::uint8_t
   histogram,
   tile_histogram,
   stable_scatter,
+  scatter,
 };
 
 export enum class splice_point : std::uint8_t
@@ -194,7 +195,7 @@ inline constexpr bool is_splice_tuple {false};
 
 template<class Element, class... Splices>
 inline constexpr bool is_splice_tuple<Element, std::tuple<Splices...>> {
-  sizeof...(Splices) >= 1UZ && (traceable_splice<Splices, Element> && ...),
+  (traceable_splice<Splices, Element> && ...),
 };
 
 template<class Dispatches>
@@ -302,6 +303,10 @@ skeleton_words() -> std::span<const std::uint32_t>
   {
     return scan_template<Element, scan_mode::exclusive>();
   }
+  else if constexpr (Skeleton == skeleton_kind::scatter)
+  {
+    return scatter_template<Element>();
+  }
   else
   {
     static_assert(
@@ -397,6 +402,7 @@ auto
 stage_module(std::index_sequence<Positions...>) -> std::vector<std::uint32_t>
 {
   using splices = typename Stage::splices;
+  [[maybe_unused]]
   const std::array<std::vector<instruction>, sizeof...(Positions)> traced {
     trace_splice<
       Element,
