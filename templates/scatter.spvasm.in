@@ -1,10 +1,12 @@
 ; fiat scatter template (SC1). @ELEMENT@ = float | int | uint.
 ; Assembled with spirv-as --target-env spv1.6, validated with spirv-val --target-env spv1.6.
-; Complete kernel (no Linkage). If flags[i] != 0, writes output[indices[i]] = input[i].
-; The invocation with index + 1 == count writes count_out[0] = indices[i] + flags[i].
+; Complete kernel (no Linkage) on the stage protocol: ports input, output, flags, indices,
+; kept_count at 0, 8, 16, 24, 32, then count at 40 and first at 44.
+; If flags[i] != 0, writes output[indices[i]] = input[i].
+; The invocation with index + 1 == count writes kept_count[0] = indices[i] + flags[i].
 ; Invariant (one reader per element): an invocation reads input[i], flags[i] and indices[i]
 ; only. It writes output[indices[i]] when flags[i] != 0, which is a different index, so
-; record must reject output overlapping input, flags, indices or count_out.
+; scatter is a permute stage and record rejects any two ports sharing an address.
                OpCapability Shader
                OpCapability PhysicalStorageBufferAddresses
                OpCapability Int64
@@ -19,10 +21,10 @@
                OpMemberDecorate %push_type 0 Offset 0
                OpMemberDecorate %push_type 1 Offset 8
                OpMemberDecorate %push_type 2 Offset 16
-               OpMemberDecorate %push_type 3 Offset 20
-               OpMemberDecorate %push_type 4 Offset 24
-               OpMemberDecorate %push_type 5 Offset 32
-               OpMemberDecorate %push_type 6 Offset 40
+               OpMemberDecorate %push_type 3 Offset 24
+               OpMemberDecorate %push_type 4 Offset 32
+               OpMemberDecorate %push_type 5 Offset 40
+               OpMemberDecorate %push_type 6 Offset 44
        %void = OpTypeVoid
        %bool = OpTypeBool
       %float = OpTypeFloat 32
@@ -32,7 +34,7 @@
      %uint_3 = OpTypeVector %uint 3
 %element_pointer = OpTypePointer PhysicalStorageBuffer %@ELEMENT@
 %flag_pointer = OpTypePointer PhysicalStorageBuffer %uint
-  %push_type = OpTypeStruct %element_pointer %element_pointer %uint %uint %flag_pointer %flag_pointer %flag_pointer
+  %push_type = OpTypeStruct %element_pointer %element_pointer %flag_pointer %flag_pointer %flag_pointer %uint %uint
 %push_pointer = OpTypePointer PushConstant %push_type
 %push_element_pointer = OpTypePointer PushConstant %element_pointer
 %push_flag_pointer = OpTypePointer PushConstant %flag_pointer
@@ -53,23 +55,23 @@
       %entry = OpLabel
  %invocation = OpLoad %uint_3 %global_id
  %invocation_x = OpCompositeExtract %uint %invocation 0
-%first_member = OpAccessChain %push_uint_pointer %push %three
+%first_member = OpAccessChain %push_uint_pointer %push %six
       %first = OpLoad %uint %first_member
       %index = OpIAdd %uint %first %invocation_x
-%count_member = OpAccessChain %push_uint_pointer %push %two
+%count_member = OpAccessChain %push_uint_pointer %push %five
       %count = OpLoad %uint %count_member
    %in_range = OpULessThan %bool %index %count
                OpSelectionMerge %done None
                OpBranchConditional %in_range %body %done
        %body = OpLabel
-%flags_member = OpAccessChain %push_flag_pointer %push %four
+%flags_member = OpAccessChain %push_flag_pointer %push %two
       %flags = OpLoad %flag_pointer %flags_member
 %flags_element = OpPtrAccessChain %flag_pointer %flags %index
       %flag = OpLoad %uint %flags_element Aligned 4
-%indices_member = OpAccessChain %push_flag_pointer %push %five
+%indices_member = OpAccessChain %push_flag_pointer %push %three
     %indices = OpLoad %flag_pointer %indices_member
 %indices_element = OpPtrAccessChain %flag_pointer %indices %index
-      %dest = OpLoad %uint %indices_element Aligned 4
+%destination = OpLoad %uint %indices_element Aligned 4
       %kept = OpINotEqual %bool %flag %zero
                OpSelectionMerge %after_keep None
                OpBranchConditional %kept %write %after_keep
@@ -80,7 +82,7 @@
      %source = OpLoad %@ELEMENT@ %input_element Aligned 4
 %output_member = OpAccessChain %push_element_pointer %push %one
      %output = OpLoad %element_pointer %output_member
-%output_element = OpPtrAccessChain %element_pointer %output %dest
+%output_element = OpPtrAccessChain %element_pointer %output %destination
                OpStore %output_element %source Aligned 4
                OpBranch %after_keep
  %after_keep = OpLabel
@@ -89,11 +91,11 @@
                OpSelectionMerge %after_last None
                OpBranchConditional %is_last %write_count %after_last
 %write_count = OpLabel
-      %total = OpIAdd %uint %dest %flag
-%count_out_member = OpAccessChain %push_flag_pointer %push %six
-  %count_out = OpLoad %flag_pointer %count_out_member
-%count_out_element = OpPtrAccessChain %flag_pointer %count_out %zero
-               OpStore %count_out_element %total Aligned 4
+      %total = OpIAdd %uint %destination %flag
+%kept_count_member = OpAccessChain %push_flag_pointer %push %four
+%kept_count = OpLoad %flag_pointer %kept_count_member
+%kept_count_element = OpPtrAccessChain %flag_pointer %kept_count %zero
+               OpStore %kept_count_element %total Aligned 4
                OpBranch %after_last
  %after_last = OpLabel
                OpBranch %done
