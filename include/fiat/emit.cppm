@@ -318,6 +318,7 @@ opcode_for(operation code, scalar_kind kind) -> spirv::opcode
 struct function_layout
 {
   std::uint32_t type {};
+  std::uint32_t return_type {};
   std::uint32_t function_type {};
   std::uint32_t function {};
   std::uint32_t offset {};
@@ -328,6 +329,7 @@ struct function_layout
   std::uint32_t element_pointer {};
   std::uint32_t ulong_type {};
   std::uint32_t glsl_std_450 {};
+  std::uint32_t bool_type {};
 };
 
 constexpr
@@ -386,7 +388,7 @@ emit_definition(
   out.emit(
     spirv::opcode::function,
     {
-      layout.type,
+      layout.return_type,
       layout.function,
       std::to_underlying(spirv::function_control::inlined),
       layout.function_type,
@@ -604,15 +606,17 @@ auto
 emit_function_module(std::span<const instruction> instructions)
   -> std::vector<std::uint32_t>
 {
-  constexpr function_layout layout {
+  function_layout layout {
     .type          = 1U,
+    .return_type   = 1U,
     .function_type = 2U,
     .function      = 3U,
     .offset        = 3U,
     .element       = kind_of<Element>,
   };
+  layout.bool_type = label_id(layout, instructions) + 1U;
 
-  spirv::writer out {label_id(layout, instructions) + 1U};
+  spirv::writer out {layout.bool_type + 1U};
   out.emit(
     spirv::opcode::capability, {std::to_underlying(spirv::capability::shader)});
   out.emit(
@@ -647,6 +651,7 @@ emit_function_module(std::span<const instruction> instructions)
         std::same_as<Element, std::int32_t> ? 1U : 0U,
       });
   }
+  out.emit(spirv::opcode::type_bool, {layout.bool_type});
   out.emit(
     spirv::opcode::type_function,
     {layout.function_type, layout.type, layout.type});

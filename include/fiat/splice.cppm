@@ -133,6 +133,12 @@ splice(
              std::to_underlying(spirv::opcode::ext_inst_import);
     });
 
+  const auto bool_type = std::ranges::find_if(
+    items, [](std::span<const std::uint32_t> item) -> bool {
+      return opcode_of(item.front()) ==
+             std::to_underlying(spirv::opcode::type_bool);
+    });
+
   const auto layout_of =
     [ & ](const detail::symbol_trace& entry, std::uint32_t first_offset)
     -> function_layout {
@@ -178,6 +184,7 @@ splice(
     {
       splice_error("declared parameter count differs from the trace");
     }
+    const std::uint32_t parameter_type {*std::next(declaration)[ 1 ]};
 
     const auto element_pointer = std::ranges::find_if(
       items, [ & ](std::span<const std::uint32_t> item) -> bool {
@@ -186,11 +193,12 @@ splice(
                item[ 2 ] ==
                  std::to_underlying(
                    spirv::storage_class::physical_storage_buffer) &&
-               item[ 3 ] == (*declaration)[ 1 ];
+               item[ 3 ] == parameter_type;
       });
 
     return {
-      .type          = (*declaration)[ 1 ],
+      .type          = parameter_type,
+      .return_type   = (*declaration)[ 1 ],
       .function_type = (*declaration)[ 4 ],
       .function      = function,
       .offset        = first_offset,
@@ -202,6 +210,7 @@ splice(
         element_pointer == items.end() ? 0U : (*element_pointer)[ 1 ],
       .ulong_type   = ulong_type == items.end() ? 0U : (*ulong_type)[ 1 ],
       .glsl_std_450 = glsl_std_450 == items.end() ? 0U : (*glsl_std_450)[ 1 ],
+      .bool_type    = bool_type == items.end() ? 0U : (*bool_type)[ 1 ],
     };
   };
 
