@@ -51,6 +51,7 @@ export enum class skeleton_kind : std::uint8_t
   tile_histogram,
   stable_scatter,
   scatter,
+  predicate,
 };
 
 export enum class splice_point : std::uint8_t
@@ -306,6 +307,10 @@ skeleton_words() -> std::span<const std::uint32_t>
   else if constexpr (Skeleton == skeleton_kind::scatter)
   {
     return scatter_template<Element>();
+  }
+  else if constexpr (Skeleton == skeleton_kind::predicate)
+  {
+    return predicate_template<Element>();
   }
   else
   {
