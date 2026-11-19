@@ -548,7 +548,7 @@ compare(comparison relation, const value<Type>& left, const Right& right)
   const auto right_id = operand_id<Type>(target, right);
   return value<bool> {
     target,
-    target.emit_compare(relation, kind_of<Type>, left.id(), right.id()),
+    target.emit_compare(relation, kind_of<Type>, left.id(), right_id),
   };
 }
 
