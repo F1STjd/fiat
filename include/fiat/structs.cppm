@@ -944,6 +944,31 @@ foreach_module() -> std::vector<std::uint32_t>
         });
       break;
     }
+    case operation::compare :
+    {
+      out.emit(
+        comparison_opcode(item.literal, item.kind),
+        {
+          id_bool,
+          mapped_id(item.result),
+          mapped_id(item.left),
+          mapped_id(item.right),
+        });
+      break;
+    }
+    case operation::select :
+    {
+      out.emit(
+        spirv::opcode::select,
+        {
+          type_of(item.kind),
+          mapped_id(item.result),
+          mapped_id(item.literal),
+          mapped_id(item.left),
+          mapped_id(item.right),
+        });
+      break;
+    }
     case operation::result :
     {
       id_result[ result_leaf++ ] = mapped_id(item.left);
