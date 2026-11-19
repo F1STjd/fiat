@@ -39,11 +39,23 @@ export enum class operation : std::uint8_t
   minimum,
   maximum,
   abs,
+  compare,
+  select,
   result,
   argument_address,
   argument_load,
   argument_cast,
   uniform_load,
+};
+
+enum class comparison : std::uint32_t
+{
+  greater,
+  greater_equal,
+  less,
+  less_equal,
+  equal,
+  not_equal,
 };
 
 inline constexpr std::uint32_t bespoke_argument_member {4U};
@@ -136,6 +148,27 @@ public:
     operation code, scalar_kind kind, std::uint32_t left, std::uint32_t right)
     -> std::uint32_t
   { return push(code, kind, left, right, 0U); }
+
+  constexpr
+  auto
+  emit_compare(
+    comparison    relation,
+    scalar_kind   kind,
+    std::uint32_t left,
+    std::uint32_t right) -> std::uint32_t
+  {
+    return push(
+      operation::compare, kind, left, right, std::to_underlying(relation));
+  }
+
+  constexpr
+  auto
+  emit_select(
+    scalar_kind   kind,
+    std::uint32_t condition,
+    std::uint32_t if_true,
+    std::uint32_t if_false) -> std::uint32_t
+  { return push(operation::select, kind, if_true, if_false, condition); }
 
   constexpr
   void
