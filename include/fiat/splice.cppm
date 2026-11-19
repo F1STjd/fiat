@@ -184,7 +184,7 @@ splice(
     {
       splice_error("declared parameter count differs from the trace");
     }
-    const std::uint32_t parameter_type {*std::next(declaration)[ 1 ]};
+    const std::uint32_t parameter_type {(*std::next(declaration))[ 1 ]};
 
     const auto element_pointer = std::ranges::find_if(
       items, [ & ](std::span<const std::uint32_t> item) -> bool {
