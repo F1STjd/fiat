@@ -302,6 +302,8 @@ opcode_for(operation code, scalar_kind kind) -> spirv::opcode
   case operation::minimum          :
   case operation::maximum          :
   case operation::abs              :
+  case operation::compare          :
+  case operation::select           :
   case operation::parameter        :
   case operation::constant         :
   case operation::result           :
@@ -314,6 +316,22 @@ opcode_for(operation code, scalar_kind kind) -> spirv::opcode
 }
 
 } // namespace detail
+
+constexpr
+auto
+comparison_opcode(std::uint32_t relation, scalar_kind kind) -> spirv::opcode
+{
+  using enum spirv::opcode;
+  constexpr std::array opcodes {
+    std::array {ford_greater_than, sgreater_than, ugreater_than},
+    std::array {ford_greater_equal, sgreater_than_equal, ugreater_than_equal},
+    std::array {ford_less_than, sless_than, uless_than},
+    std::array {ford_less_equal, sless_than_equal, uless_than_equal},
+    std::array {ford_equal, iequal, iequal},
+    std::array {funord_not_equal, inot_equal, inot_equal},
+  };
+  return opcodes[ relation ][ std::to_underlying(kind) ];
+}
 
 struct function_layout
 {
@@ -502,6 +520,31 @@ emit_definition(
           layout.glsl_std_450,
           std::to_underlying(instruction),
           module_id(layout, item.left),
+        });
+      break;
+    }
+    case operation::compare :
+    {
+      out.emit(
+        comparison_opcode(item.literal, item.kind),
+        {
+          layout.bool_type,
+          module_id(layout, item.result),
+          module_id(layout, item.left),
+          module_id(layout, item.right),
+        });
+      break;
+    }
+    case operation::select :
+    {
+      out.emit(
+        spirv::opcode::select,
+        {
+          constant_type(layout, item.kind),
+          module_id(layout, item.result),
+          module_id(layout, item.literal),
+          module_id(layout, item.left),
+          module_id(layout, item.right),
         });
       break;
     }
