@@ -588,6 +588,40 @@ constexpr auto
 operator !=(const value<Type>& left, const Right& right) -> value<bool>
 { return compare(comparison::not_equal, left, right); }
 
+template<scalar Type, class IfTrue, class IfFalse>
+constexpr
+auto
+choose(
+  const value<bool>& condition, const IfTrue& if_true, const IfFalse& if_false)
+  -> value<Type>
+{
+  auto&      target   = condition.target();
+  const auto true_id  = operand_id<Type>(target, if_true);
+  const auto false_id = operand_id<Type>(target, if_false);
+  return value<Type> {
+    target,
+    target.emit_select(kind_of<Type>, condition.id(), true_id, false_id),
+  };
+}
+
+export
+template<scalar Type, operand_for<Type> IfFlase>
+constexpr auto
+select(
+  const value<bool>& condition,
+  const value<Type>& if_true,
+  const IfFlase&     if_false) -> value<Type>
+{ return choose<Type>(condition, if_true, if_false); }
+
+export
+template<scalar Type, literal_for<Type> IfTrue>
+constexpr auto
+select(
+  const value<bool>& condition,
+  const IfTrue&      if_true,
+  const value<Type>& if_false) -> value<Type>
+{ return choose<Type>(condition, if_true, if_false); }
+
 export
 auto
 operator -(const value<std::uint32_t>&) -> value<std::uint32_t> = delete(
