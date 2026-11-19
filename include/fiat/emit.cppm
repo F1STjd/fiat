@@ -11,6 +11,7 @@ export inline constexpr std::string_view operation_symbol {"fiat_operation"};
 export inline constexpr std::string_view combine_symbol {"fiat_combine"};
 export inline constexpr std::string_view epilogue_symbol {"fiat_epilogue"};
 export inline constexpr std::string_view key_symbol {"fiat_key"};
+export inline constexpr std::string_view predicate_symbol {"fiat_predicate"};
 
 template<class Operation>
 struct arguments_of
@@ -108,6 +109,34 @@ concept uniform_traceable =
     typename arguments_of<Operation>::type
   >;
 
+export template<class Predicate, class Element, class... Arguments>
+concept traceable_predicate_call =
+  scalar<Element> &&
+  std::is_empty_v<Predicate> &&
+  std::default_initializable<Predicate> &&
+  (std::same_as<Arguments, Element> && ...) &&
+  std::same_as<
+    std::invoke_result_t<
+      Predicate,
+      const value<Element>&,
+      const value<Arguments>&...
+    >,
+    value<bool>
+  >;
+
+template<class Predicate, class Element, class Arguments>
+inline constexpr bool predicate_arguments {false};
+
+template<class Predicate, class Element, class... Arguments>
+inline constexpr bool
+  predicate_arguments<Predicate, Element, std::tuple<Arguments...>> =
+    traceable_predicate_call<Predicate, Element, Arguments...>;
+
+export template<class Predicate, class Element>
+concept traceable_predicate =
+  scalar<Element> &&
+  predicate_arguments<Predicate, Element, typename arguments_of<Predicate>::type>;
+
 export template<class Operation, class Element>
 concept combinable =
   scalar<Element> &&
@@ -194,6 +223,58 @@ trace_uniform_call(
   {
     parameter = Operation {}(parameter, uniform, std::get<Slots>(arguments)...);
   }
+}
+
+template<
+  class Predicate,
+  std::size_t FirstSlot,
+  scalar      Element,
+  class... Arguments,
+  std::size_t... Indices
+>
+constexpr
+auto
+trace_predicate_call(
+  [[maybe_unused]] detail::recorder& target,
+  const value<Element>&              parameter,
+  std::type_identity<std::tuple<Arguments...>>,
+  std::index_sequence<Indices...>) -> value<bool>
+{
+  [[maybe_unused]]
+  const std::tuple<value<Arguments>...> arguments {
+    value<Arguments> {
+      target,
+      target.emit_argument(
+        kind_of<Arguments>, std::uint32_t {FirstSlot + Indices}),
+    }...,
+  };
+  return Predicate {}(parameter, std::get<Indices>(arguments)...);
+}
+
+template<
+  scalar Element,
+  class Predicate,
+  std::size_t   FirstSlot,
+  std::uint32_t ArgumentMember
+>
+  requires traceable_predicate<Predicate, Element>
+constexpr
+auto
+trace_predicate() -> std::vector<instruction>
+{
+  using argument_tuple = typename arguments_of<Predicate>::type;
+
+  detail::recorder     target {ArgumentMember};
+  const value<Element> parameter {
+    target, target.emit_parameter(kind_of<Element>)
+  };
+  const value<bool> kept = trace_predicate_call<Predicate, FirstSlot>(
+    target,
+    parameter,
+    std::type_identity<argument_tuple> {},
+    std::make_index_sequence<std::tuple_size_v<argument_tuple>> {});
+  target.emit_result(kind_of<Element>, kept.id());
+  return std::move(target).instructions();
 }
 
 namespace detail
