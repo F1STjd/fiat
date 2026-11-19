@@ -116,12 +116,59 @@ struct digit
   { return (key >> shift) & mask; }
 };
 
-export struct greater {};
-export struct greater_equal {};
-export struct less {};
-export struct less_equal {};
-export struct equal {};
-export struct not_equal {};
+export struct greater
+{
+  template<scalar Type>
+  constexpr
+  auto
+  operator ()(value<Type> left, value<Type> right) const -> value<bool>
+  { return left > right; }
+};
+
+export struct greater_equal
+{
+  template<scalar Type>
+  constexpr
+  auto
+  operator ()(value<Type> left, value<Type> right) const -> value<bool>
+  { return left >= right; }
+};
+
+export struct less
+{
+  template<scalar Type>
+  constexpr
+  auto
+  operator ()(value<Type> left, value<Type> right) const -> value<bool>
+  { return left < right; }
+};
+
+export struct less_equal
+{
+  template<scalar Type>
+  constexpr
+  auto
+  operator ()(value<Type> left, value<Type> right) const -> value<bool>
+  { return left <= right; }
+};
+
+export struct equal
+{
+  template<scalar Type>
+  constexpr
+  auto
+  operator ()(value<Type> left, value<Type> right) const -> value<bool>
+  { return left == right; }
+};
+
+export struct not_equal
+{
+  template<scalar Type>
+  constexpr
+  auto
+  operator ()(value<Type> left, value<Type> right) const -> value<bool>
+  { return left != right; }
+};
 
 export template<class Compare>
 concept compare_operation =
