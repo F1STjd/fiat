@@ -80,6 +80,8 @@ splice(
   std::span<const std::uint32_t>        skeleton,
   std::span<const detail::symbol_trace> traces) -> std::vector<std::uint32_t>
 {
+  if (traces.empty()) { return std::ranges::to<std::vector>(skeleton); }
+
   const auto items = instructions_of(skeleton);
 
   const auto uint_type = std::ranges::find_if(
