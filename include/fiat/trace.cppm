@@ -219,7 +219,10 @@ private:
 
 } // namespace detail
 
-export template<scalar Type>
+export template<class Type>
+concept traced_type = scalar<Type> || std::same_as<Type, bool>;
+
+export template<traced_type Type>
 class value;
 
 export template<class Literal, class Type>
@@ -237,7 +240,7 @@ constexpr
 auto
 combine(operation code, const Left& left, const Right& right) -> value<Type>;
 
-export template<scalar Type>
+export template<traced_type Type>
 class value
 {
 public:
