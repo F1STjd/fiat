@@ -747,8 +747,27 @@ struct bound_uniform_operation
 export template<scalar Uniform, class Operation>
 struct transform_with_stage
 {
-  std::uint64_t                          address {};
-  typename arguments_of<Operation>::type arguments {};
+  static constexpr stage_class    kind {stage_class::elementwise};
+  static constexpr skeleton_kind  skeleton {skeleton_kind::transform};
+  static constexpr stage_schedule schedule {};
+  static constexpr std::array     dispatches {
+    dispatch_rule {.entry = transform_entry},
+  };
+
+  template<scalar Element>
+  using ports = std::tuple<
+    port<Element, port_access::read>,
+    port<Element, port_access::write>
+  >;
+
+  using leading_arguments = std::tuple<std::uint32_t, std::uint32_t>;
+
+  using splices =
+    std::tuple<splice_operation<splice_point::uniform_operation, Operation>>;
+
+  decltype(std::tuple_cat(
+    std::declval<leading_arguments>(),
+    std::declval<typename arguments_of<Operation>::type>())) arguments {};
 };
 
 export
@@ -780,9 +799,13 @@ transform_with(const UniformSource& uniform, Operation, Arguments... arguments)
   static_assert(
     sizeof...(Arguments) <= argument_capacity - 2UZ,
     "fiat::transform_with takes at most 24 further runtime arguments");
+  const auto address = static_cast<std::uint64_t>(uniform.address());
   return {
-    .address   = static_cast<std::uint64_t>(uniform.address()),
-    .arguments = {arguments...},
+    .arguments = {
+      static_cast<std::uint32_t>(address),
+      static_cast<std::uint32_t>(address >> 32U),
+      arguments...,
+    },
   };
 }
 
@@ -949,52 +972,5 @@ static_assert(
     float
   >,
   "the scan identity has the array's element type");
-
-namespace detail
-{
-
-template<scalar Element, scalar Uniform, class Operation>
-  requires uniform_traceable<Operation, Element, Uniform>
-constexpr
-auto
-transform_with_module() -> std::vector<std::uint32_t>
-{
-  const auto instructions = trace_with_uniform<Element, Uniform, Operation>();
-  return splice<Element>(
-    skeleton_words<skeleton_kind::transform, Element>(),
-    std::array {
-      symbol_trace {
-        .symbol       = operation_symbol,
-        .instructions = instructions,
-      },
-    });
-}
-
-} // namespace detail
-
-export template<scalar Element, scalar Uniform, class Operation>
-  requires uniform_traceable<Operation, Element, Uniform>
-inline constexpr std::size_t transform_with_word_count =
-  detail::transform_with_module<Element, Uniform, Operation>().size();
-
-export
-template<scalar Element, scalar Uniform, class Operation>
-  requires uniform_traceable<Operation, Element, Uniform>
-consteval auto
-compile(transform_with_stage<Uniform, Operation>) -> std::array<
-  std::uint32_t,
-  transform_with_word_count<Element, Uniform, Operation>
->
-{
-  const auto words =
-    detail::transform_with_module<Element, Uniform, Operation>();
-  std::array<
-    std::uint32_t,
-    transform_with_word_count<Element, Uniform, Operation>
-  >
-    result {};
-  std::ranges::copy(words, result.begin());
-  return result;
-}
 
 } // namespace fiat
