@@ -17,15 +17,15 @@ export inline constexpr std::size_t argument_capacity {26UZ};
 namespace detail
 {
 
-export inline constexpr std::uint32_t reduce_group_limit {1'024U};
+export inline constexpr std::uint32_t partial_group_limit {1'024U};
 static_assert(
-  reduce_group_limit <= 65'535U,
+  partial_group_limit <= 65'535U,
   "65535 is the Vulkan minimum of maxComputeWorkGroupCount[0]");
 
-export inline constexpr std::size_t reduce_scratch_bytes {
-  8UZ + 4UZ * reduce_group_limit
+export inline constexpr std::size_t partial_scratch_bytes {
+  8UZ + 4UZ * partial_group_limit
 };
-static_assert(reduce_scratch_bytes == 4'104UZ, "counter + result + partials");
+static_assert(partial_scratch_bytes == 4'104UZ, "counter + result + partials");
 
 } // namespace detail
 
@@ -103,11 +103,11 @@ struct reduce_stage
     dispatch_rule {
       .entry          = reduce_entry,
       .extent         = dispatch_extent::grid_stride,
-      .maximum_groups = detail::reduce_group_limit,
+      .maximum_groups = detail::partial_group_limit,
     },
   };
   static constexpr workspace_sizes workspace {
-    .scratch_bytes = detail::reduce_scratch_bytes,
+    .scratch_bytes = detail::partial_scratch_bytes,
   };
 
   template<std::same_as<Identity> Element>
@@ -147,16 +147,16 @@ struct scan_stage
     dispatch_rule {
       .entry          = scan_upsweep_entry,
       .extent         = dispatch_extent::grid_stride,
-      .maximum_groups = detail::reduce_group_limit,
+      .maximum_groups = detail::partial_group_limit,
     },
     dispatch_rule {
       .entry          = scan_downsweep_entry,
       .extent         = dispatch_extent::grid_stride,
-      .maximum_groups = detail::reduce_group_limit,
+      .maximum_groups = detail::partial_group_limit,
     },
   };
   static constexpr workspace_sizes workspace {
-    .scratch_bytes = detail::reduce_scratch_bytes,
+    .scratch_bytes = detail::partial_scratch_bytes,
   };
 
   template<std::same_as<Identity> Element>
