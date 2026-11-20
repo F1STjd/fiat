@@ -113,10 +113,11 @@ export struct foreach_push
   std::array<std::uint32_t, argument_capacity> arguments {};
 };
 
-static_assert(sizeof(foreach_push) == 128UZ, "same budget as transform_push");
 static_assert(
-  offsetof(foreach_push, arguments) == argument_offset,
-  "argument block stays at byte 24");
+  sizeof(foreach_push) == 128UZ,
+  "same 128-byte budget as the transform skeleton push block");
+static_assert(
+  offsetof(foreach_push, arguments) == 24UZ, "argument block stays at byte 24");
 
 } // namespace detail
 

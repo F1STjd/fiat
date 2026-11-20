@@ -17,17 +17,6 @@ export inline constexpr std::size_t argument_capacity {26UZ};
 namespace detail
 {
 
-export inline constexpr std::size_t argument_offset {24UZ};
-
-export struct transform_push
-{
-  std::uint64_t                                input {};
-  std::uint64_t                                output {};
-  std::uint32_t                                count {};
-  std::uint32_t                                first {};
-  std::array<std::uint32_t, argument_capacity> arguments {};
-};
-
 export inline constexpr std::uint32_t reduce_group_limit {1'024U};
 static_assert(
   reduce_group_limit <= 65'535U,
@@ -43,14 +32,6 @@ static_assert(reduce_scratch_bytes == 4'104UZ, "counter + result + partials");
 export inline constexpr std::size_t reduce_result_offset {4UZ};
 static_assert(
   reduce_result_offset == 4UZ, "scratch member 1 holds the reduced value");
-
-static_assert(
-  sizeof(detail::transform_push) ==
-    detail::argument_offset + argument_capacity * sizeof(std::uint32_t),
-  "matches the template push block");
-static_assert(
-  sizeof(detail::transform_push) == 128UZ,
-  "fits the 128 bytes every Vulkan device guarantees");
 
 export inline constexpr std::size_t stable_scatter_argument_capacity {20UZ};
 
@@ -697,12 +678,11 @@ static_assert(
   matches_transform_splice<std::uint32_t>(transform(minus {}, 2U)),
   "the stage protocol compiles fiat::transform to the spliced template words");
 static_assert(
-  skeleton_push_of<transform_stage<chain<>>, float>.size() ==
-    sizeof(detail::transform_push),
-  "the transform skeleton push block is the 128-byte transform_push");
+  skeleton_push_of<transform_stage<chain<>>, float>.size() == 128UZ,
+  "the transform skeleton push block fits the 128-byte every Vulkan device "
+  "guarantees");
 static_assert(
-  skeleton_push_of<transform_stage<chain<>>, float>.argument_offset() ==
-    detail::argument_offset,
+  skeleton_push_of<transform_stage<chain<>>, float>.argument_offset() == 24UZ,
   "transform arguments start after two ports, count and first");
 
 export template<scalar Uniform>
@@ -872,7 +852,7 @@ operator |(
 
 static_assert(
   skeleton_push_of<reduce_stage<chain<>, plus, float>, float>.argument_offset() ==
-    detail::argument_offset,
+    24UZ,
   "reduce arguments start after the input, the scratch, count and first");
 static_assert(
   skeleton_push_of<reduce_stage<chain<>, plus, float>, float>.arguments ==

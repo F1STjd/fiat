@@ -74,8 +74,8 @@ static_assert(
   transform_layout.argument_words_within(128U) == fiat::argument_capacity,
   "the 128-byte layout keeps 26 argument words");
 static_assert(
-  legacy_layout.size() == sizeof(fiat::detail::transform_push),
-  "2 ports and 26 arguments match the transform push block");
+  legacy_layout.size() == 128U,
+  "2 ports and 26 arguments fill the 128-byte transform skeleton push block");
 static_assert(
   fiat::skeleton_push_of<square_transform, float>.size() == legacy_layout.size(),
   "the skeleton push block of a 2-port stage is the transform push block");
