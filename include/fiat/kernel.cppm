@@ -61,28 +61,6 @@ static_assert(
 namespace detail
 {
 
-export struct tile_histogram_push
-{
-  std::uint64_t                                input {};
-  std::uint64_t                                histogram {};
-  std::uint32_t                                count {};
-  std::uint32_t                                first {};
-  std::array<std::uint32_t, argument_capacity> arguments {};
-};
-
-} // namespace detail
-
-static_assert(
-  sizeof(detail::tile_histogram_push) ==
-    detail::argument_offset + argument_capacity * sizeof(std::uint32_t),
-  "matches the tile-histogram template push block");
-static_assert(
-  sizeof(detail::tile_histogram_push) == 128UZ,
-  "fits the 128 bytes every Vulkan device guarantees");
-
-namespace detail
-{
-
 export struct stable_scatter_push
 {
   std::uint64_t                                               input_keys {};
@@ -434,8 +412,25 @@ static_assert(
 export template<std::uint32_t Buckets, class Key>
 struct tile_histogram_stage
 {
+  static_assert(
+    Buckets >= 1U, "fiat::tile_histogram needs at least one bucket");
+
+  static constexpr stage_class    kind {stage_class::sink};
+  static constexpr skeleton_kind  skeleton {skeleton_kind::tile_histogram};
+  static constexpr stage_schedule schedule {};
+  static constexpr std::array     dispatches {
+    dispatch_rule {.entry = tile_histogram_entry},
+  };
   static constexpr std::uint32_t buckets {Buckets};
-  using key_type = Key;
+
+  template<std::same_as<std::uint32_t> Element>
+  using ports = std::tuple<
+    port<Element, port_access::read>,
+    port<Element, port_access::write>
+  >;
+
+  using splices = std::tuple<splice_operation<splice_point::key, Key>>;
+
   typename arguments_of<Key>::type arguments {};
 };
 
@@ -445,8 +440,6 @@ constexpr auto
 tile_histogram(Key, Arguments... arguments)
   -> tile_histogram_stage<Buckets, Key>
 {
-  static_assert(
-    Buckets >= 1U, "fiat::tile_histogram needs at least one bucket");
   static_assert(
     std::is_empty_v<Key> && std::default_initializable<Key>,
     "fiat::tile_histogram cannot read lambda captures; pass runtime values as "
@@ -475,6 +468,16 @@ tile_histogram(Key, Arguments... arguments)
     "fiat::tile_histogram key must be traceable on std::uint32_t");
   return {.arguments = {arguments...}};
 }
+
+static_assert(
+  dispatch_push_of<tile_histogram_stage<16U, identity>, std::uint32_t>.argument_member() ==
+    4U,
+  "the tile-histogram template reads its argument words from push member 4");
+static_assert(
+  skeleton_push_of<tile_histogram_stage<16U, identity>, std::uint32_t>.arguments ==
+    argument_capacity,
+  "the tile-histogram template keeps 26 argument words after the input and "
+  "histogram");
 
 export template<std::uint32_t Buckets, class Key>
 struct stable_scatter_stage
@@ -999,20 +1002,6 @@ template<class Key>
   requires traceable<Key, std::uint32_t>
 constexpr
 auto
-tile_histogram_module() -> std::vector<std::uint32_t>
-{
-  const auto instructions = trace<std::uint32_t, Key>();
-  return splice<std::uint32_t>(
-    tile_histogram_template(),
-    std::array {
-      symbol_trace {key_symbol, instructions},
-    });
-}
-
-template<class Key>
-  requires traceable<Key, std::uint32_t>
-constexpr
-auto
 stable_scatter_module() -> std::vector<std::uint32_t>
 {
   const auto instructions = trace<std::uint32_t, Key>();
@@ -1024,27 +1013,6 @@ stable_scatter_module() -> std::vector<std::uint32_t>
 }
 
 } // namespace detail
-
-export template<class Key>
-  requires traceable<Key, std::uint32_t>
-inline constexpr std::size_t tile_histogram_word_count =
-  detail::tile_histogram_module<Key>().size();
-
-export
-template<scalar Element, std::uint32_t Buckets, class Key>
-  requires (
-    std::same_as<Element, std::uint32_t> &&
-    traceable<Key, Element> &&
-    (Buckets >= 1U))
-consteval auto
-compile(tile_histogram_stage<Buckets, Key>)
-  -> std::array<std::uint32_t, tile_histogram_word_count<Key>>
-{
-  const auto words = detail::tile_histogram_module<Key>();
-  std::array<std::uint32_t, tile_histogram_word_count<Key>> result {};
-  std::ranges::copy(words, result.begin());
-  return result;
-}
 
 export template<class Key>
   requires traceable<Key, std::uint32_t>
