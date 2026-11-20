@@ -61,6 +61,7 @@ export enum class splice_point : std::uint8_t
   epilogue,
   key,
   predicate,
+  uniform_operation,
 };
 
 export template<splice_point Point, class Operation>
@@ -187,6 +188,12 @@ concept traceable_splice =
       traceable<typename Splice::operation_type, std::uint32_t>) ||
     (Splice::point == splice_point::predicate &&
       traceable_predicate<typename Splice::operation_type, Element>) ||
+    (Splice::point == splice_point::uniform_operation &&
+      uniform_traceable<
+        typename Splice::operation_type,
+        Element,
+        typename Splice::operation_type::uniform_type
+      >) ||
     ((Splice::point == splice_point::operation ||
        Splice::point == splice_point::epilogue) &&
       traceable<typename Splice::operation_type, Element>));
@@ -364,11 +371,12 @@ symbol_of(splice_point point) -> std::string_view
 {
   switch (point)
   {
-  case splice_point::operation : return operation_symbol;
-  case splice_point::combine   : return combine_symbol;
-  case splice_point::epilogue  : return epilogue_symbol;
-  case splice_point::key       : return key_symbol;
-  case splice_point::predicate : return predicate_symbol;
+  case splice_point::operation         : return operation_symbol;
+  case splice_point::combine           : return combine_symbol;
+  case splice_point::epilogue          : return epilogue_symbol;
+  case splice_point::key               : return key_symbol;
+  case splice_point::predicate         : return predicate_symbol;
+  case splice_point::uniform_operation : return operation_symbol;
   }
   std::unreachable();
 }
@@ -411,6 +419,18 @@ trace_splice() -> std::vector<instruction>
   else if constexpr (Splice::point == splice_point::predicate)
   {
     return trace_predicate<Element, operation_type, FirstSlot, ArgumentMember>();
+  }
+  else if constexpr (Splice::point == splice_point::uniform_operation)
+  {
+    static_assert(
+      FirstSlot == 2UZ && ArgumentMember == bespoke_argument_member,
+      "a uniform operation reads its uniform from argument words 0 and 1 of "
+      "push member 4");
+    return detail::trace_with_uniform<
+      Element,
+      typename operation_type::uniform_type,
+      operation_type
+    >();
   }
   else
   {
