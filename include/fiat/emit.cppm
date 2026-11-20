@@ -671,23 +671,26 @@ emit_definition(
     }
     case operation::uniform_load :
     {
-      const auto lo      = module_id(layout, item.left);
-      const auto hi      = module_id(layout, item.right);
-      const auto shift   = module_id(layout, item.literal);
-      const auto base    = item.result - 5U;
-      const auto hi64    = module_id(layout, base);
-      const auto lo64    = module_id(layout, base + 1U);
-      const auto shifted = module_id(layout, base + 2U);
-      const auto address = module_id(layout, base + 3U);
-      const auto pointer = module_id(layout, base + 4U);
-      out.emit(spirv::opcode::uconvert, {layout.ulong_type, hi64, hi});
-      out.emit(spirv::opcode::uconvert, {layout.ulong_type, lo64, lo});
+      const auto low_half       = module_id(layout, item.left);
+      const auto high_half      = module_id(layout, item.right);
+      const auto shift          = module_id(layout, item.literal);
+      const auto base           = item.result - 5U;
+      const auto high_half_wide = module_id(layout, base);
+      const auto low_half_wide  = module_id(layout, base + 1U);
+      const auto shifted        = module_id(layout, base + 2U);
+      const auto address        = module_id(layout, base + 3U);
+      const auto pointer        = module_id(layout, base + 4U);
+      out.emit(
+        spirv::opcode::uconvert,
+        {layout.ulong_type, high_half_wide, high_half});
+      out.emit(
+        spirv::opcode::uconvert, {layout.ulong_type, low_half_wide, low_half});
       out.emit(
         spirv::opcode::shift_left_logical,
         {
           layout.ulong_type,
           shifted,
-          hi64,
+          high_half_wide,
           shift,
         });
       out.emit(
@@ -696,7 +699,7 @@ emit_definition(
           layout.ulong_type,
           address,
           shifted,
-          lo64,
+          low_half_wide,
         });
       out.emit(
         spirv::opcode::convert_u_to_ptr,

@@ -419,74 +419,74 @@ foreach_module() -> std::vector<std::uint32_t>
   std::uint32_t next_id {1U};
   const auto    advance_id = [ & ] -> std::uint32_t { return next_id++; };
 
-  const std::uint32_t id_void            = advance_id();
-  const std::uint32_t id_bool            = advance_id();
-  const std::uint32_t id_float           = advance_id();
-  const std::uint32_t id_int             = advance_id();
-  const std::uint32_t id_uint            = advance_id();
-  const std::uint32_t id_ulong           = advance_id();
-  const std::uint32_t id_uint3           = advance_id();
-  const std::uint32_t id_arg_count       = advance_id();
-  const std::uint32_t id_arg_array       = advance_id();
-  const std::uint32_t id_push_type       = advance_id();
-  const std::uint32_t id_push_ptr        = advance_id();
-  const std::uint32_t id_push_ulong_ptr  = advance_id();
-  const std::uint32_t id_push_uint_ptr   = advance_id();
-  const std::uint32_t id_float_psb_ptr   = advance_id();
-  const std::uint32_t id_int_psb_ptr     = advance_id();
-  const std::uint32_t id_uint_psb_ptr    = advance_id();
-  const std::uint32_t id_input_uint3_ptr = advance_id();
-  const std::uint32_t id_main_type       = advance_id();
-  const std::uint32_t id_zero            = advance_id();
-  const std::uint32_t id_one             = advance_id();
-  const std::uint32_t id_two             = advance_id();
-  const std::uint32_t id_three           = advance_id();
-  const std::uint32_t id_four            = advance_id();
-  const std::uint32_t id_c255            = advance_id();
-  const std::uint32_t id_align_mask      = advance_id();
-  const std::uint32_t id_group_size      = advance_id();
-  const std::uint32_t id_global_id       = advance_id();
-  const std::uint32_t id_push            = advance_id();
-  const std::uint32_t id_main            = advance_id();
-  const std::uint32_t id_entry           = advance_id();
-  const std::uint32_t id_body            = advance_id();
-  const std::uint32_t id_done            = advance_id();
-  const std::uint32_t id_glsl            = advance_id();
+  const std::uint32_t id_void                  = advance_id();
+  const std::uint32_t id_bool                  = advance_id();
+  const std::uint32_t id_float                 = advance_id();
+  const std::uint32_t id_int                   = advance_id();
+  const std::uint32_t id_uint                  = advance_id();
+  const std::uint32_t id_ulong                 = advance_id();
+  const std::uint32_t id_uint3                 = advance_id();
+  const std::uint32_t id_argument_count        = advance_id();
+  const std::uint32_t id_argument_array        = advance_id();
+  const std::uint32_t id_push_type             = advance_id();
+  const std::uint32_t id_push_pointer          = advance_id();
+  const std::uint32_t id_push_ulong_pointer    = advance_id();
+  const std::uint32_t id_push_uint_pointer     = advance_id();
+  const std::uint32_t id_float_storage_pointer = advance_id();
+  const std::uint32_t id_int_storage_pointer   = advance_id();
+  const std::uint32_t id_uint_storage_pointer  = advance_id();
+  const std::uint32_t id_input_uint3_pointer   = advance_id();
+  const std::uint32_t id_main_type             = advance_id();
+  const std::uint32_t id_zero                  = advance_id();
+  const std::uint32_t id_one                   = advance_id();
+  const std::uint32_t id_two                   = advance_id();
+  const std::uint32_t id_three                 = advance_id();
+  const std::uint32_t id_four                  = advance_id();
+  const std::uint32_t id_alignment_minus_one   = advance_id();
+  const std::uint32_t id_align_mask            = advance_id();
+  const std::uint32_t id_group_size            = advance_id();
+  const std::uint32_t id_global_id             = advance_id();
+  const std::uint32_t id_push                  = advance_id();
+  const std::uint32_t id_main                  = advance_id();
+  const std::uint32_t id_entry                 = advance_id();
+  const std::uint32_t id_body                  = advance_id();
+  const std::uint32_t id_done                  = advance_id();
+  const std::uint32_t id_glsl                  = advance_id();
 
-  std::array<std::uint32_t, soa_leaf_limit> id_leaf_ptr {};
-  std::array<std::uint32_t, soa_leaf_limit> id_addr {};
-  std::array<std::uint32_t, soa_leaf_limit> id_index_x4 {};
-  std::array<std::uint32_t, soa_leaf_limit> id_index_x4_ul {};
-  std::array<std::uint32_t, soa_leaf_limit> id_region_u {};
-  std::array<std::uint32_t, soa_leaf_limit> id_region_ul {};
+  std::array<std::uint32_t, soa_leaf_limit> id_leaf_pointer {};
+  std::array<std::uint32_t, soa_leaf_limit> id_leaf_address {};
+  std::array<std::uint32_t, soa_leaf_limit> id_index_bytes {};
+  std::array<std::uint32_t, soa_leaf_limit> id_index_bytes_ulong {};
+  std::array<std::uint32_t, soa_leaf_limit> id_region_uint {};
+  std::array<std::uint32_t, soa_leaf_limit> id_region_ulong {};
   std::array<std::uint32_t, soa_leaf_limit> id_base_plus {};
   std::array<std::uint32_t, soa_leaf_limit> id_leaf_const {};
 
   for (auto leaf : std::views::indices(leaves))
   {
-    id_leaf_ptr[ leaf ]    = advance_id();
-    id_addr[ leaf ]        = advance_id();
-    id_index_x4[ leaf ]    = advance_id();
-    id_index_x4_ul[ leaf ] = advance_id();
-    id_region_u[ leaf ]    = advance_id();
-    id_region_ul[ leaf ]   = advance_id();
-    id_base_plus[ leaf ]   = advance_id();
-    id_leaf_const[ leaf ]  = advance_id();
+    id_leaf_pointer[ leaf ]      = advance_id();
+    id_leaf_address[ leaf ]      = advance_id();
+    id_index_bytes[ leaf ]       = advance_id();
+    id_index_bytes_ulong[ leaf ] = advance_id();
+    id_region_uint[ leaf ]       = advance_id();
+    id_region_ulong[ leaf ]      = advance_id();
+    id_base_plus[ leaf ]         = advance_id();
+    id_leaf_const[ leaf ]        = advance_id();
   }
 
-  const std::uint32_t id_invocation   = advance_id();
-  const std::uint32_t id_invocation_x = advance_id();
-  const std::uint32_t id_first_member = advance_id();
-  const std::uint32_t id_first        = advance_id();
-  const std::uint32_t id_index        = advance_id();
-  const std::uint32_t id_count_member = advance_id();
-  const std::uint32_t id_count        = advance_id();
-  const std::uint32_t id_in_range     = advance_id();
-  const std::uint32_t id_base_member  = advance_id();
-  const std::uint32_t id_base         = advance_id();
-  const std::uint32_t id_count_x4     = advance_id();
-  const std::uint32_t id_count_x4_255 = advance_id();
-  const std::uint32_t id_stride       = advance_id();
+  const std::uint32_t id_invocation             = advance_id();
+  const std::uint32_t id_invocation_x           = advance_id();
+  const std::uint32_t id_first_member           = advance_id();
+  const std::uint32_t id_first                  = advance_id();
+  const std::uint32_t id_index                  = advance_id();
+  const std::uint32_t id_count_member           = advance_id();
+  const std::uint32_t id_count                  = advance_id();
+  const std::uint32_t id_in_range               = advance_id();
+  const std::uint32_t id_base_member            = advance_id();
+  const std::uint32_t id_base                   = advance_id();
+  const std::uint32_t id_count_bytes            = advance_id();
+  const std::uint32_t id_count_bytes_rounded_up = advance_id();
+  const std::uint32_t id_stride                 = advance_id();
 
   std::uint32_t trace_high {1U};
   for (const instruction& item : instructions)
@@ -512,14 +512,14 @@ foreach_module() -> std::vector<std::uint32_t>
     return id_uint;
   };
 
-  const auto ptr_of = [ & ](scalar_kind kind) -> std::uint32_t {
+  const auto pointer_of = [ & ](scalar_kind kind) -> std::uint32_t {
     switch (kind)
     {
-    case scalar_kind::float32 : return id_float_psb_ptr;
-    case scalar_kind::int32   : return id_int_psb_ptr;
-    case scalar_kind::uint32  : return id_uint_psb_ptr;
+    case scalar_kind::float32 : return id_float_storage_pointer;
+    case scalar_kind::int32   : return id_int_storage_pointer;
+    case scalar_kind::uint32  : return id_uint_storage_pointer;
     }
-    return id_uint_psb_ptr;
+    return id_uint_storage_pointer;
   };
 
   out.emit(
@@ -583,28 +583,28 @@ foreach_module() -> std::vector<std::uint32_t>
   out.emit(
     spirv::opcode::decorate,
     {
-      id_arg_array,
+      id_argument_array,
       std::to_underlying(spirv::decoration::array_stride),
       4U,
     });
   out.emit(
     spirv::opcode::decorate,
     {
-      id_float_psb_ptr,
+      id_float_storage_pointer,
       std::to_underlying(spirv::decoration::array_stride),
       4U,
     });
   out.emit(
     spirv::opcode::decorate,
     {
-      id_int_psb_ptr,
+      id_int_storage_pointer,
       std::to_underlying(spirv::decoration::array_stride),
       4U,
     });
   out.emit(
     spirv::opcode::decorate,
     {
-      id_uint_psb_ptr,
+      id_uint_storage_pointer,
       std::to_underlying(spirv::decoration::array_stride),
       4U,
     });
@@ -662,57 +662,58 @@ foreach_module() -> std::vector<std::uint32_t>
   out.emit(spirv::opcode::type_int, {id_uint, 32U, 0U});
   out.emit(spirv::opcode::type_int, {id_ulong, 64U, 0U});
   out.emit(spirv::opcode::type_vector, {id_uint3, id_uint, 3U});
-  out.emit(spirv::opcode::constant, {id_uint, id_arg_count, 26U});
-  out.emit(spirv::opcode::type_array, {id_arg_array, id_uint, id_arg_count});
+  out.emit(spirv::opcode::constant, {id_uint, id_argument_count, 26U});
+  out.emit(
+    spirv::opcode::type_array, {id_argument_array, id_uint, id_argument_count});
   out.emit(
     spirv::opcode::type_struct,
-    {id_push_type, id_ulong, id_ulong, id_uint, id_uint, id_arg_array});
+    {id_push_type, id_ulong, id_ulong, id_uint, id_uint, id_argument_array});
   out.emit(
     spirv::opcode::type_pointer,
     {
-      id_push_ptr,
+      id_push_pointer,
       std::to_underlying(spirv::storage_class::push_constant),
       id_push_type,
     });
   out.emit(
     spirv::opcode::type_pointer,
     {
-      id_push_ulong_ptr,
+      id_push_ulong_pointer,
       std::to_underlying(spirv::storage_class::push_constant),
       id_ulong,
     });
   out.emit(
     spirv::opcode::type_pointer,
     {
-      id_push_uint_ptr,
+      id_push_uint_pointer,
       std::to_underlying(spirv::storage_class::push_constant),
       id_uint,
     });
   out.emit(
     spirv::opcode::type_pointer,
     {
-      id_float_psb_ptr,
+      id_float_storage_pointer,
       std::to_underlying(spirv::storage_class::physical_storage_buffer),
       id_float,
     });
   out.emit(
     spirv::opcode::type_pointer,
     {
-      id_int_psb_ptr,
+      id_int_storage_pointer,
       std::to_underlying(spirv::storage_class::physical_storage_buffer),
       id_int,
     });
   out.emit(
     spirv::opcode::type_pointer,
     {
-      id_uint_psb_ptr,
+      id_uint_storage_pointer,
       std::to_underlying(spirv::storage_class::physical_storage_buffer),
       id_uint,
     });
   out.emit(
     spirv::opcode::type_pointer,
     {
-      id_input_uint3_ptr,
+      id_input_uint3_pointer,
       std::to_underlying(spirv::storage_class::input),
       id_uint3,
     });
@@ -723,7 +724,7 @@ foreach_module() -> std::vector<std::uint32_t>
   out.emit(spirv::opcode::constant, {id_uint, id_two, 2U});
   out.emit(spirv::opcode::constant, {id_uint, id_three, 3U});
   out.emit(spirv::opcode::constant, {id_uint, id_four, 4U});
-  out.emit(spirv::opcode::constant, {id_uint, id_c255, 255U});
+  out.emit(spirv::opcode::constant, {id_uint, id_alignment_minus_one, 255U});
   out.emit(spirv::opcode::constant, {id_uint, id_align_mask, 0xFF'FF'FF'00U});
   out.emit(spirv::opcode::spec_constant, {id_uint, id_group_size, 256U});
 
@@ -748,14 +749,14 @@ foreach_module() -> std::vector<std::uint32_t>
   out.emit(
     spirv::opcode::variable,
     {
-      id_input_uint3_ptr,
+      id_input_uint3_pointer,
       id_global_id,
       std::to_underlying(spirv::storage_class::input),
     });
   out.emit(
     spirv::opcode::variable,
     {
-      id_push_ptr,
+      id_push_pointer,
       id_push,
       std::to_underlying(spirv::storage_class::push_constant),
     });
@@ -776,12 +777,12 @@ foreach_module() -> std::vector<std::uint32_t>
     {id_uint, id_invocation_x, id_invocation, 0U});
   out.emit(
     spirv::opcode::access_chain,
-    {id_push_uint_ptr, id_first_member, id_push, id_three});
+    {id_push_uint_pointer, id_first_member, id_push, id_three});
   out.emit(spirv::opcode::load, {id_uint, id_first, id_first_member});
   out.emit(spirv::opcode::iadd, {id_uint, id_index, id_first, id_invocation_x});
   out.emit(
     spirv::opcode::access_chain,
-    {id_push_uint_ptr, id_count_member, id_push, id_two});
+    {id_push_uint_pointer, id_count_member, id_push, id_two});
   out.emit(spirv::opcode::load, {id_uint, id_count, id_count_member});
   out.emit(
     spirv::opcode::uless_than, {id_bool, id_in_range, id_index, id_count});
@@ -793,53 +794,58 @@ foreach_module() -> std::vector<std::uint32_t>
   out.emit(spirv::opcode::label, {id_body});
   out.emit(
     spirv::opcode::access_chain,
-    {id_push_ulong_ptr, id_base_member, id_push, id_zero});
+    {id_push_ulong_pointer, id_base_member, id_push, id_zero});
   out.emit(spirv::opcode::load, {id_ulong, id_base, id_base_member});
 
-  out.emit(spirv::opcode::imul, {id_uint, id_count_x4, id_count, id_four});
+  out.emit(spirv::opcode::imul, {id_uint, id_count_bytes, id_count, id_four});
   out.emit(
-    spirv::opcode::iadd, {id_uint, id_count_x4_255, id_count_x4, id_c255});
+    spirv::opcode::iadd,
+    {id_uint, id_count_bytes_rounded_up, id_count_bytes, id_alignment_minus_one});
   out.emit(
     spirv::opcode::bitwise_and,
-    {id_uint, id_stride, id_count_x4_255, id_align_mask});
+    {id_uint, id_stride, id_count_bytes_rounded_up, id_align_mask});
 
-  std::size_t                               leaf_param {};
-  std::array<std::uint32_t, soa_leaf_limit> id_store_ptr {};
+  std::size_t                               leaf_parameter {};
+  std::array<std::uint32_t, soa_leaf_limit> id_store_pointer {};
   for (const instruction& item : instructions)
   {
     if (item.code != operation::parameter) { continue; }
-    if (leaf_param >= leaves) { continue; }
-    const std::size_t   leaf {leaf_param++};
+    if (leaf_parameter >= leaves) { continue; }
+    const std::size_t   leaf {leaf_parameter++};
     const scalar_kind   kind {leaf_kinds_v<Element>[ leaf ]};
-    const std::uint32_t dest {mapped_id(item.result)};
+    const std::uint32_t destination {mapped_id(item.result)};
 
     out.emit(
       spirv::opcode::imul,
-      {id_uint, id_region_u[ leaf ], id_stride, id_leaf_const[ leaf ]});
+      {id_uint, id_region_uint[ leaf ], id_stride, id_leaf_const[ leaf ]});
     out.emit(
       spirv::opcode::uconvert,
-      {id_ulong, id_region_ul[ leaf ], id_region_u[ leaf ]});
+      {id_ulong, id_region_ulong[ leaf ], id_region_uint[ leaf ]});
     out.emit(
-      spirv::opcode::imul, {id_uint, id_index_x4[ leaf ], id_index, id_four});
+      spirv::opcode::imul,
+      {id_uint, id_index_bytes[ leaf ], id_index, id_four});
     out.emit(
       spirv::opcode::uconvert,
-      {id_ulong, id_index_x4_ul[ leaf ], id_index_x4[ leaf ]});
+      {id_ulong, id_index_bytes_ulong[ leaf ], id_index_bytes[ leaf ]});
     out.emit(
       spirv::opcode::iadd,
-      {id_ulong, id_base_plus[ leaf ], id_base, id_region_ul[ leaf ]});
+      {id_ulong, id_base_plus[ leaf ], id_base, id_region_ulong[ leaf ]});
     out.emit(
       spirv::opcode::iadd,
-      {id_ulong, id_addr[ leaf ], id_base_plus[ leaf ], id_index_x4_ul[ leaf ]});
+      {id_ulong,
+        id_leaf_address[ leaf ],
+        id_base_plus[ leaf ],
+        id_index_bytes_ulong[ leaf ]});
     out.emit(
       spirv::opcode::convert_u_to_ptr,
-      {ptr_of(kind), id_leaf_ptr[ leaf ], id_addr[ leaf ]});
-    id_store_ptr[ leaf ] = id_leaf_ptr[ leaf ];
+      {pointer_of(kind), id_leaf_pointer[ leaf ], id_leaf_address[ leaf ]});
+    id_store_pointer[ leaf ] = id_leaf_pointer[ leaf ];
     out.emit(
       spirv::opcode::load,
       {
         type_of(kind),
-        dest,
-        id_leaf_ptr[ leaf ],
+        destination,
+        id_leaf_pointer[ leaf ],
         spirv::memory_access_aligned,
         4U,
       });
@@ -979,7 +985,7 @@ foreach_module() -> std::vector<std::uint32_t>
       out.emit(
         spirv::opcode::access_chain,
         {
-          id_push_uint_ptr,
+          id_push_uint_pointer,
           mapped_id(item.result),
           id_push,
           mapped_id(item.left),
@@ -1010,7 +1016,7 @@ foreach_module() -> std::vector<std::uint32_t>
     out.emit(
       spirv::opcode::store,
       {
-        id_store_ptr[ leaf ],
+        id_store_pointer[ leaf ],
         id_result[ leaf ],
         spirv::memory_access_aligned,
         4U,
