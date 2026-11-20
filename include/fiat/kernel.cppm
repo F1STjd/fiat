@@ -771,15 +771,15 @@ transform_with(const UniformSource& uniform, Operation, Arguments... arguments)
 {
   static_assert(
     std::is_empty_v<Operation>,
-    "fait::transform_with cannot read lambda captures; pass runtime values as "
+    "fiat::transform_with cannot read lambda captures; pass runtime values as "
     "arguments: fiat::transform_with(scalar, f, value)");
   static_assert(
     (scalar<Arguments> && ...),
-    "fait::transform_with arguments must be float std::int32_t or "
+    "fiat::transform_with arguments must be float std::int32_t or "
     "std::uint32_t");
   static_assert(
     sizeof...(Arguments) <= argument_capacity - 2UZ,
-    "fait::transform_with takes at most 24 further runtime arguments");
+    "fiat::transform_with takes at most 24 further runtime arguments");
   return {
     .address   = static_cast<std::uint64_t>(uniform.address()),
     .arguments = {arguments...},
