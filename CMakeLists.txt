@@ -22,7 +22,7 @@ target_sources(fiat
       include/fiat/stage.cppm
       include/fiat/kernel.cppm
       include/fiat/structs.cppm
-      include/fiat/ops.cppm)
+      include/fiat/operations.cppm)
 
 target_compile_features(fiat PUBLIC cxx_std_26)
 set_target_properties(fiat PROPERTIES CXX_MODULE_STD ON)

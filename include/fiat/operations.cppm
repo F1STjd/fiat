@@ -1,4 +1,4 @@
-export module fiat:ops;
+export module fiat:operations;
 
 import std;
 

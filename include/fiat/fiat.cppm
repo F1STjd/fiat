@@ -8,4 +8,4 @@ export import :splice;
 export import :stage;
 export import :kernel;
 export import :structs;
-export import :ops;
+export import :operations;

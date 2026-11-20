@@ -7,7 +7,7 @@ import :emit;
 import :templates;
 import :splice;
 import :stage;
-import :ops;
+import :operations;
 
 namespace fiat
 {
