@@ -35,84 +35,9 @@ find_program(FIAT_SPIRV_VAL spirv-val REQUIRED HINTS "$ENV{VULKAN_SDK}/Bin")
 
 set(FIAT_TEMPLATE_DIR "${CMAKE_CURRENT_BINARY_DIR}/templates")
 set(FIAT_TEMPLATE_OUTPUTS)
-foreach(ELEMENT IN ITEMS float int uint)
-  set(source "${FIAT_TEMPLATE_DIR}/transform_${ELEMENT}.spvasm")
-  set(binary "${FIAT_TEMPLATE_DIR}/transform_${ELEMENT}.spv")
-  configure_file(templates/transform.spvasm.in "${source}" @ONLY)
-  add_custom_command(
-    OUTPUT "${binary}"
-    COMMAND "${FIAT_SPIRV_AS}" --target-env spv1.6 -o "${binary}" "${source}"
-    COMMAND "${FIAT_SPIRV_VAL}" --target-env spv1.6 "${binary}"
-    DEPENDS "${source}"
-    VERBATIM)
-  list(APPEND FIAT_TEMPLATE_OUTPUTS "${binary}")
-
-  set(reduce_source "${FIAT_TEMPLATE_DIR}/reduce_${ELEMENT}.spvasm")
-  set(reduce_binary "${FIAT_TEMPLATE_DIR}/reduce_${ELEMENT}.spv")
-  configure_file(templates/reduce.spvasm.in "${reduce_source}" @ONLY)
-  add_custom_command(
-    OUTPUT "${reduce_binary}"
-    COMMAND "${FIAT_SPIRV_AS}" --target-env spv1.6 -o "${reduce_binary}" "${reduce_source}"
-    COMMAND "${FIAT_SPIRV_VAL}" --target-env spv1.6 "${reduce_binary}"
-    DEPENDS "${reduce_source}"
-    VERBATIM)
-  list(APPEND FIAT_TEMPLATE_OUTPUTS "${reduce_binary}")
-
-  foreach(MODE IN ITEMS inclusive exclusive)
-    if(MODE STREQUAL "exclusive")
-      set(SCAN_EXCLUSIVE OpConstantTrue)
-    else()
-      set(SCAN_EXCLUSIVE OpConstantFalse)
-    endif()
-    set(scan_source "${FIAT_TEMPLATE_DIR}/scan_${MODE}_${ELEMENT}.spvasm")
-    set(scan_binary "${FIAT_TEMPLATE_DIR}/scan_${MODE}_${ELEMENT}.spv")
-    configure_file(templates/scan.spvasm.in "${scan_source}" @ONLY)
-    add_custom_command(
-      OUTPUT "${scan_binary}"
-      COMMAND "${FIAT_SPIRV_AS}" --target-env spv1.6 -o "${scan_binary}" "${scan_source}"
-      COMMAND "${FIAT_SPIRV_VAL}" --target-env spv1.6 "${scan_binary}"
-      DEPENDS "${scan_source}"
-      VERBATIM)
-    list(APPEND FIAT_TEMPLATE_OUTPUTS "${scan_binary}")
-  endforeach()
-
-  set(scatter_source "${FIAT_TEMPLATE_DIR}/scatter_${ELEMENT}.spvasm")
-  set(scatter_binary "${FIAT_TEMPLATE_DIR}/scatter_${ELEMENT}.spv")
-  configure_file(templates/scatter.spvasm.in "${scatter_source}" @ONLY)
-  add_custom_command(
-    OUTPUT "${scatter_binary}"
-    COMMAND "${FIAT_SPIRV_AS}" --target-env spv1.6 -o "${scatter_binary}" "${scatter_source}"
-    COMMAND "${FIAT_SPIRV_VAL}" --target-env spv1.6 "${scatter_binary}"
-    DEPENDS "${scatter_source}"
-    VERBATIM)
-  list(APPEND FIAT_TEMPLATE_OUTPUTS "${scatter_binary}")
-
-  set(predicate_source "${FIAT_TEMPLATE_DIR}/predicate_${ELEMENT}.spvasm")
-  set(predicate_binary "${FIAT_TEMPLATE_DIR}/predicate_${ELEMENT}.spv")
-  configure_file(templates/predicate.spvasm.in "${predicate_source}" @ONLY)
-  add_custom_command(
-    OUTPUT "${predicate_binary}"
-    COMMAND "${FIAT_SPIRV_AS}" --target-env spv1.6 -o "${predicate_binary}" "${predicate_source}"
-    COMMAND "${FIAT_SPIRV_VAL}" --target-env spv1.6 "${predicate_binary}"
-    DEPENDS "${predicate_source}"
-    VERBATIM)
-  list(APPEND FIAT_TEMPLATE_OUTPUTS "${predicate_binary}")
-endforeach()
-
-set(histogram_source "${FIAT_TEMPLATE_DIR}/histogram_uint.spvasm")
-set(histogram_binary "${FIAT_TEMPLATE_DIR}/histogram_uint.spv")
-configure_file(templates/histogram.spvasm.in "${histogram_source}" @ONLY)
-add_custom_command(
-  OUTPUT "${histogram_binary}"
-  COMMAND "${FIAT_SPIRV_AS}" --target-env spv1.6 -o "${histogram_binary}" "${histogram_source}"
-  COMMAND "${FIAT_SPIRV_VAL}" --target-env spv1.6 "${histogram_binary}"
-  DEPENDS "${histogram_source}"
-  VERBATIM)
-list(APPEND FIAT_TEMPLATE_OUTPUTS "${histogram_binary}")
-
-foreach(TEMPLATE IN ITEMS tile_histogram stable_scatter)
-  set(source "${FIAT_TEMPLATE_DIR}/${TEMPLATE}_uint.spvasm")
-  set(binary "${FIAT_TEMPLATE_DIR}/${TEMPLATE}_uint.spv")
+function(fiat_add_template NAME TEMPLATE)
+  set(source "${FIAT_TEMPLATE_DIR}/${NAME}.spvasm")
+  set(binary "${FIAT_TEMPLATE_DIR}/${NAME}.spv")
   configure_file(templates/${TEMPLATE}.spvasm.in "${source}" @ONLY)
   add_custom_command(
     OUTPUT "${binary}"
@@ -121,6 +46,24 @@ foreach(TEMPLATE IN ITEMS tile_histogram stable_scatter)
     DEPENDS "${source}"
     VERBATIM)
   list(APPEND FIAT_TEMPLATE_OUTPUTS "${binary}")
+  set(FIAT_TEMPLATE_OUTPUTS "${FIAT_TEMPLATE_OUTPUTS}" PARENT_SCOPE)
+endfunction()
+
+foreach(ELEMENT IN ITEMS float int uint)
+  foreach(TEMPLATE IN ITEMS transform reduce scatter predicate)
+    fiat_add_template(${TEMPLATE}_${ELEMENT} ${TEMPLATE})
+  endforeach()
+  foreach(MODE IN ITEMS inclusive exclusive)
+    if(MODE STREQUAL "exclusive")
+      set(SCAN_EXCLUSIVE OpConstantTrue)
+    else()
+      set(SCAN_EXCLUSIVE OpConstantFalse)
+    endif()
+  endforeach()
+endforeach()
+
+foreach(TEMPLATE IN ITEMS histogram tile_histogram stable_scatter)
+  fiat_add_template(${TEMPLATE}_uint ${TEMPLATE})
 endforeach()
 
 add_custom_target(fiat_templates DEPENDS ${FIAT_TEMPLATE_OUTPUTS})
