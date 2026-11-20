@@ -54,37 +54,6 @@ static_assert(
 
 export inline constexpr std::size_t stable_scatter_argument_capacity {20UZ};
 
-static_assert(
-  stable_scatter_argument_capacity == 20UZ,
-  "leaves 24 bytes after member 4 for scanned and the two value pointers");
-
-namespace detail
-{
-
-export struct stable_scatter_push
-{
-  std::uint64_t                                               input_keys {};
-  std::uint64_t                                               output_keys {};
-  std::uint32_t                                               count {};
-  std::uint32_t                                               first {};
-  std::array<std::uint32_t, stable_scatter_argument_capacity> arguments {};
-  std::uint64_t                                               scanned {};
-  std::uint64_t                                               input_values {};
-  std::uint64_t                                               output_values {};
-};
-
-} // namespace detail
-
-static_assert(
-  sizeof(detail::stable_scatter_push) ==
-    detail::argument_offset +
-      stable_scatter_argument_capacity * sizeof(std::uint32_t) +
-      24UZ,
-  "matches the stable-scatter template push block");
-static_assert(
-  sizeof(detail::stable_scatter_push) == 128UZ,
-  "fits the 128 bytes every Vulkan device guarantees");
-
 export inline constexpr std::string_view transform_entry {"fiat_transform"};
 
 export inline constexpr std::string_view reduce_entry {"fiat_reduce"};
@@ -114,9 +83,7 @@ export inline constexpr std::string_view tile_histogram_entry {
 export inline constexpr std::string_view stable_scatter_entry {
   "fiat_stable_scatter"
 };
-export inline constexpr std::string_view stable_scatter_pairs_entry {
-  "fiat_stable_scatter_pairs"
-};
+export inline constexpr std::uint32_t companions_constant_id {2U};
 
 export template<class Operation>
 struct transform_stage
@@ -479,22 +446,48 @@ static_assert(
   "the tile-histogram template keeps 26 argument words after the input and "
   "histogram");
 
-export template<std::uint32_t Buckets, class Key>
+export template<std::uint32_t Buckets, std::uint32_t Companions, class Key>
 struct stable_scatter_stage
 {
+  static_assert(
+    Buckets >= 1U, "fiat::stable_scatter needs at least one bucket");
+  static_assert(
+    Companions <= 1U, "fiat::stable_scatter carries at most one companion");
+
+  static constexpr stage_class    kind {stage_class::permute};
+  static constexpr skeleton_kind  skeleton {skeleton_kind::stable_scatter};
+  static constexpr stage_schedule schedule {};
+  static constexpr std::array     dispatches {
+    dispatch_rule {.entry = stable_scatter_entry},
+  };
   static constexpr std::uint32_t buckets {Buckets};
-  using key_type = Key;
+  static constexpr std::uint32_t companions {Companions};
+
+  template<std::same_as<std::uint32_t> Element>
+  using ports = std::tuple<
+    port<Element, port_access::read>,
+    port<Element, port_access::write>,
+    port<std::uint32_t, port_access::read>,
+    port<std::uint32_t, port_access::read>,
+    port<std::uint32_t, port_access::write>
+  >;
+
+  using splices = std::tuple<splice_operation<splice_point::key, Key>>;
+
   typename arguments_of<Key>::type arguments {};
 };
 
 export
-template<std::uint32_t Buckets, class Key, class... Arguments>
+template<
+  std::uint32_t Buckets,
+  std::uint32_t Companions = 0U,
+  class Key,
+  class... Arguments
+>
 constexpr auto
 stable_scatter(Key, Arguments... arguments)
-  -> stable_scatter_stage<Buckets, Key>
+  -> stable_scatter_stage<Buckets, Companions, Key>
 {
-  static_assert(
-    Buckets >= 1U, "fiat::stable_scatter needs at least one bucket");
   static_assert(
     std::is_empty_v<Key> && std::default_initializable<Key>,
     "fiat::stable_scatter cannot read lambda captures; pass runtime values as "
@@ -523,6 +516,15 @@ stable_scatter(Key, Arguments... arguments)
     "fiat::stable_scatter key must be traceable on std::uint32_t");
   return {.arguments = {arguments...}};
 }
+
+static_assert(
+  dispatch_push_of<stable_scatter_stage<16U, 0U, identity>, std::uint32_t>.argument_member() ==
+    7U,
+  "the stable-scatter template reads its argument words from push member 7");
+static_assert(
+  skeleton_push_of<stable_scatter_stage<16U, 0U, identity>, std::uint32_t>.arguments ==
+    stable_scatter_argument_capacity,
+  "the stable-scatter template keeps 20 argument words after its five ports");
 
 export template<std::uint32_t Bits = 8U>
 struct radix_sort_stage
@@ -991,46 +993,6 @@ compile(transform_with_stage<Uniform, Operation>) -> std::array<
     transform_with_word_count<Element, Uniform, Operation>
   >
     result {};
-  std::ranges::copy(words, result.begin());
-  return result;
-}
-
-namespace detail
-{
-
-template<class Key>
-  requires traceable<Key, std::uint32_t>
-constexpr
-auto
-stable_scatter_module() -> std::vector<std::uint32_t>
-{
-  const auto instructions = trace<std::uint32_t, Key>();
-  return splice<std::uint32_t>(
-    stable_scatter_template(),
-    std::array {
-      symbol_trace {key_symbol, instructions},
-    });
-}
-
-} // namespace detail
-
-export template<class Key>
-  requires traceable<Key, std::uint32_t>
-inline constexpr std::size_t stable_scatter_word_count =
-  detail::stable_scatter_module<Key>().size();
-
-export
-template<scalar Element, std::uint32_t Buckets, class Key>
-  requires (
-    std::same_as<Element, std::uint32_t> &&
-    traceable<Key, Element> &&
-    (Buckets >= 1U))
-consteval auto
-compile(stable_scatter_stage<Buckets, Key>)
-  -> std::array<std::uint32_t, stable_scatter_word_count<Key>>
-{
-  const auto words = detail::stable_scatter_module<Key>();
-  std::array<std::uint32_t, stable_scatter_word_count<Key>> result {};
   std::ranges::copy(words, result.begin());
   return result;
 }
