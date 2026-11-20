@@ -680,7 +680,7 @@ matches_transform_splice(transform_stage<Operation> stage) -> bool
   return std::ranges::equal(
     compile<Element>(stage),
     splice<Element>(
-      transform_template<Element>(),
+      skeleton_words<skeleton_kind::transform, Element>(),
       std::array {
         detail::symbol_trace {operation_symbol, instructions},
       }));
@@ -961,7 +961,7 @@ transform_with_module() -> std::vector<std::uint32_t>
 {
   const auto instructions = trace_with_uniform<Element, Uniform, Operation>();
   return splice<Element>(
-    transform_template<Element>(),
+    skeleton_words<skeleton_kind::transform, Element>(),
     std::array {
       symbol_trace {
         .symbol       = operation_symbol,

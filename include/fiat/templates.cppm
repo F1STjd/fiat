@@ -8,98 +8,11 @@ import :trace;
 namespace fiat
 {
 
-#if defined(__clang__)
-  #pragma clang diagnostic push
-  #pragma clang diagnostic ignored "-Wc23-extensions"
-#endif
+inline
+void
+template_error([[maybe_unused]] std::string_view reason)
+{}
 
-inline constexpr auto transform_float_bytes = std::to_array<unsigned char>({
-#embed "transform_float.spv"
-});
-
-inline constexpr auto transform_int_bytes = std::to_array<unsigned char>({
-#embed "transform_int.spv"
-});
-
-inline constexpr auto transform_uint_bytes = std::to_array<unsigned char>({
-#embed "transform_uint.spv"
-});
-
-inline constexpr auto reduce_float_bytes = std::to_array<unsigned char>({
-#embed "reduce_float.spv"
-});
-
-inline constexpr auto reduce_int_bytes = std::to_array<unsigned char>({
-#embed "reduce_int.spv"
-});
-
-inline constexpr auto reduce_uint_bytes = std::to_array<unsigned char>({
-#embed "reduce_uint.spv"
-});
-
-inline constexpr auto scan_inclusive_float_bytes = std::to_array<unsigned char>({
-#embed "scan_inclusive_float.spv"
-});
-
-inline constexpr auto scan_inclusive_int_bytes = std::to_array<unsigned char>({
-#embed "scan_inclusive_int.spv"
-});
-
-inline constexpr auto scan_inclusive_uint_bytes = std::to_array<unsigned char>({
-#embed "scan_inclusive_uint.spv"
-});
-
-inline constexpr auto scan_exclusive_float_bytes = std::to_array<unsigned char>({
-#embed "scan_exclusive_float.spv"
-});
-
-inline constexpr auto scan_exclusive_int_bytes = std::to_array<unsigned char>({
-#embed "scan_exclusive_int.spv"
-});
-
-inline constexpr auto scan_exclusive_uint_bytes = std::to_array<unsigned char>({
-#embed "scan_exclusive_uint.spv"
-});
-
-inline constexpr auto predicate_float_bytes = std::to_array<unsigned char>({
-#embed "predicate_float.spv"
-});
-
-inline constexpr auto predicate_int_bytes = std::to_array<unsigned char>({
-#embed "predicate_int.spv"
-});
-
-inline constexpr auto predicate_uint_bytes = std::to_array<unsigned char>({
-#embed "predicate_uint.spv"
-});
-
-inline constexpr auto scatter_float_bytes = std::to_array<unsigned char>({
-#embed "scatter_float.spv"
-});
-
-inline constexpr auto scatter_int_bytes = std::to_array<unsigned char>({
-#embed "scatter_int.spv"
-});
-
-inline constexpr auto scatter_uint_bytes = std::to_array<unsigned char>({
-#embed "scatter_uint.spv"
-});
-
-inline constexpr auto histogram_uint_bytes = std::to_array<unsigned char>({
-#embed "histogram_uint.spv"
-});
-
-inline constexpr auto tile_histogram_uint_bytes = std::to_array<unsigned char>({
-#embed "tile_histogram_uint.spv"
-});
-
-inline constexpr auto stable_scatter_uint_bytes = std::to_array<unsigned char>({
-#embed "stable_scatter_uint.spv"
-});
-
-#if defined(__clang__)
-  #pragma clang diagnostic pop
-#endif
 template<std::size_t Size>
   requires (Size % sizeof(std::uint32_t) == 0UZ)
 consteval
@@ -107,210 +20,134 @@ auto
 assemble_words(const std::array<unsigned char, Size>& bytes)
   -> std::array<std::uint32_t, Size / sizeof(std::uint32_t)>
 {
-  std::array<std::uint32_t, Size / sizeof(std::uint32_t)> words {};
-  for (auto index : std::views::indices(words.size()))
+  auto words = std::bit_cast<
+    std::array<std::uint32_t, Size / sizeof(std::uint32_t)>
+  >(bytes);
+  if (words.front() != spirv::magic)
   {
-    const auto base = index * sizeof(std::uint32_t);
-    words[ index ] =
-      static_cast<std::uint32_t>(bytes[ base ]) |
-      static_cast<std::uint32_t>(bytes[ base + 1UZ ]) << 8U |
-      static_cast<std::uint32_t>(bytes[ base + 2UZ ]) << 16U |
-      static_cast<std::uint32_t>(bytes[ base + 3UZ ]) << 24U;
+    template_error("an embedded template does not start with the SPIR-V magic");
   }
   return words;
 }
 
-inline constexpr auto transform_float_words =
-  assemble_words(transform_float_bytes);
-inline constexpr auto transform_int_words = assemble_words(transform_int_bytes);
-inline constexpr auto transform_uint_words =
-  assemble_words(transform_uint_bytes);
+#if defined(__clang__)
+  #pragma clang diagnostic push
+  #pragma clang diagnostic ignored "-Wc23-extensions"
+#endif
 
-inline constexpr auto reduce_float_words = assemble_words(reduce_float_bytes);
-inline constexpr auto reduce_int_words   = assemble_words(reduce_int_bytes);
-inline constexpr auto reduce_uint_words  = assemble_words(reduce_uint_bytes);
+inline constexpr auto transform_float_words =
+  assemble_words(std::to_array<unsigned char>({
+#embed "transform_float.spv"
+  }));
+
+inline constexpr auto transform_int_words =
+  assemble_words(std::to_array<unsigned char>({
+#embed "transform_int.spv"
+  }));
+
+inline constexpr auto transform_uint_words =
+  assemble_words(std::to_array<unsigned char>({
+#embed "transform_uint.spv"
+  }));
+
+inline constexpr auto reduce_float_words =
+  assemble_words(std::to_array<unsigned char>({
+#embed "reduce_float.spv"
+  }));
+
+inline constexpr auto reduce_int_words =
+  assemble_words(std::to_array<unsigned char>({
+#embed "reduce_int.spv"
+  }));
+
+inline constexpr auto reduce_uint_words =
+  assemble_words(std::to_array<unsigned char>({
+#embed "reduce_uint.spv"
+  }));
 
 inline constexpr auto scan_inclusive_float_words =
-  assemble_words(scan_inclusive_float_bytes);
+  assemble_words(std::to_array<unsigned char>({
+#embed "scan_inclusive_float.spv"
+  }));
+
 inline constexpr auto scan_inclusive_int_words =
-  assemble_words(scan_inclusive_int_bytes);
+  assemble_words(std::to_array<unsigned char>({
+#embed "scan_inclusive_int.spv"
+  }));
+
 inline constexpr auto scan_inclusive_uint_words =
-  assemble_words(scan_inclusive_uint_bytes);
+  assemble_words(std::to_array<unsigned char>({
+#embed "scan_inclusive_uint.spv"
+  }));
+
 inline constexpr auto scan_exclusive_float_words =
-  assemble_words(scan_exclusive_float_bytes);
+  assemble_words(std::to_array<unsigned char>({
+#embed "scan_exclusive_float.spv"
+  }));
+
 inline constexpr auto scan_exclusive_int_words =
-  assemble_words(scan_exclusive_int_bytes);
+  assemble_words(std::to_array<unsigned char>({
+#embed "scan_exclusive_int.spv"
+  }));
+
 inline constexpr auto scan_exclusive_uint_words =
-  assemble_words(scan_exclusive_uint_bytes);
+  assemble_words(std::to_array<unsigned char>({
+#embed "scan_exclusive_uint.spv"
+  }));
 
 inline constexpr auto predicate_float_words =
-  assemble_words(predicate_float_bytes);
-inline constexpr auto predicate_int_words = assemble_words(predicate_int_bytes);
-inline constexpr auto predicate_uint_words =
-  assemble_words(predicate_uint_bytes);
+  assemble_words(std::to_array<unsigned char>({
+#embed "predicate_float.spv"
+  }));
 
-inline constexpr auto scatter_float_words = assemble_words(scatter_float_bytes);
-inline constexpr auto scatter_int_words   = assemble_words(scatter_int_bytes);
-inline constexpr auto scatter_uint_words  = assemble_words(scatter_uint_bytes);
+inline constexpr auto predicate_int_words =
+  assemble_words(std::to_array<unsigned char>({
+#embed "predicate_int.spv"
+  }));
+
+inline constexpr auto predicate_uint_words =
+  assemble_words(std::to_array<unsigned char>({
+#embed "predicate_uint.spv"
+  }));
+
+inline constexpr auto scatter_float_words =
+  assemble_words(std::to_array<unsigned char>({
+#embed "scatter_float.spv"
+  }));
+
+inline constexpr auto scatter_int_words =
+  assemble_words(std::to_array<unsigned char>({
+#embed "scatter_int.spv"
+  }));
+
+inline constexpr auto scatter_uint_words =
+  assemble_words(std::to_array<unsigned char>({
+#embed "scatter_uint.spv"
+  }));
 
 inline constexpr auto histogram_uint_words =
-  assemble_words(histogram_uint_bytes);
+  assemble_words(std::to_array<unsigned char>({
+#embed "histogram_uint.spv"
+  }));
 
 inline constexpr auto tile_histogram_uint_words =
-  assemble_words(tile_histogram_uint_bytes);
+  assemble_words(std::to_array<unsigned char>({
+#embed "tile_histogram_uint.spv"
+  }));
 
 inline constexpr auto stable_scatter_uint_words =
-  assemble_words(stable_scatter_uint_bytes);
+  assemble_words(std::to_array<unsigned char>({
+#embed "stable_scatter_uint.spv"
+  }));
 
-static_assert(transform_float_words.front() == spirv::magic);
-static_assert(transform_int_words.front() == spirv::magic);
-static_assert(transform_uint_words.front() == spirv::magic);
-
-static_assert(reduce_float_words.front() == spirv::magic);
-static_assert(reduce_int_words.front() == spirv::magic);
-static_assert(reduce_uint_words.front() == spirv::magic);
-
-static_assert(scan_inclusive_float_words.front() == spirv::magic);
-static_assert(scan_inclusive_int_words.front() == spirv::magic);
-static_assert(scan_inclusive_uint_words.front() == spirv::magic);
-static_assert(scan_exclusive_float_words.front() == spirv::magic);
-static_assert(scan_exclusive_int_words.front() == spirv::magic);
-static_assert(scan_exclusive_uint_words.front() == spirv::magic);
-
-static_assert(predicate_float_words.front() == spirv::magic);
-static_assert(predicate_int_words.front() == spirv::magic);
-static_assert(predicate_uint_words.front() == spirv::magic);
-
-static_assert(scatter_float_words.front() == spirv::magic);
-static_assert(scatter_int_words.front() == spirv::magic);
-static_assert(scatter_uint_words.front() == spirv::magic);
-
-static_assert(histogram_uint_words.front() == spirv::magic);
-
-static_assert(tile_histogram_uint_words.front() == spirv::magic);
-
-static_assert(stable_scatter_uint_words.front() == spirv::magic);
-
-template<scalar Element>
-consteval
-auto
-transform_template() -> std::span<const std::uint32_t>
-{
-  if constexpr (std::same_as<Element, float>) { return transform_float_words; }
-  else if constexpr (std::same_as<Element, std::int32_t>)
-  {
-    return transform_int_words;
-  }
-  else
-  {
-    return transform_uint_words;
-  }
-}
-
-template<scalar Element>
-consteval
-auto
-reduce_template() -> std::span<const std::uint32_t>
-{
-  if constexpr (std::same_as<Element, float>) { return reduce_float_words; }
-  else if constexpr (std::same_as<Element, std::int32_t>)
-  {
-    return reduce_int_words;
-  }
-  else
-  {
-    return reduce_uint_words;
-  }
-}
+#if defined(__clang__)
+  #pragma clang diagnostic pop
+#endif
 
 export enum class scan_mode : std::uint8_t
 {
   inclusive,
   exclusive,
 };
-
-template<scalar Element, scan_mode Mode>
-consteval
-auto
-scan_template() -> std::span<const std::uint32_t>
-{
-  if constexpr (Mode == scan_mode::inclusive)
-  {
-    if constexpr (std::same_as<Element, float>)
-    {
-      return scan_inclusive_float_words;
-    }
-    else if constexpr (std::same_as<Element, std::uint32_t>)
-    {
-      return scan_inclusive_uint_words;
-    }
-    else
-    {
-      return scan_inclusive_int_words;
-    }
-  }
-  else
-  {
-    if constexpr (std::same_as<Element, float>)
-    {
-      return scan_exclusive_float_words;
-    }
-    else if constexpr (std::same_as<Element, std::uint32_t>)
-    {
-      return scan_exclusive_uint_words;
-    }
-    else
-    {
-      return scan_exclusive_int_words;
-    }
-  }
-}
-
-template<scalar Element>
-consteval
-auto
-predicate_template() -> std::span<const std::uint32_t>
-{
-  if constexpr (std::same_as<Element, float>) { return predicate_float_words; }
-  else if constexpr (std::same_as<Element, std::int32_t>)
-  {
-    return predicate_int_words;
-  }
-  else
-  {
-    return predicate_uint_words;
-  }
-}
-
-template<scalar Element>
-consteval
-auto
-scatter_template() -> std::span<const std::uint32_t>
-{
-  if constexpr (std::same_as<Element, float>) { return scatter_float_words; }
-  else if constexpr (std::same_as<Element, std::int32_t>)
-  {
-    return scatter_int_words;
-  }
-  else
-  {
-    return scatter_uint_words;
-  }
-}
-
-consteval
-auto
-histogram_template() -> std::span<const std::uint32_t>
-{ return histogram_uint_words; }
-
-consteval
-auto
-tile_histogram_template() -> std::span<const std::uint32_t>
-{ return tile_histogram_uint_words; }
-
-consteval
-auto
-stable_scatter_template() -> std::span<const std::uint32_t>
-{ return stable_scatter_uint_words; }
 
 } // namespace fiat

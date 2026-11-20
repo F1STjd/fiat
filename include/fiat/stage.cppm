@@ -283,6 +283,22 @@ inline constexpr dispatch_push skeleton_push_of {
     dispatch_push_of<Stage, Element>.argument_words_within(skeleton_push_bytes),
 };
 
+template<scalar Element>
+consteval
+auto
+element_words(
+  std::span<const std::uint32_t> float_words,
+  std::span<const std::uint32_t> int_words,
+  std::span<const std::uint32_t> uint_words) -> std::span<const std::uint32_t>
+{
+  if constexpr (std::same_as<Element, float>) { return float_words; }
+  else if constexpr (std::same_as<Element, std::int32_t>) { return int_words; }
+  else
+  {
+    return uint_words;
+  }
+}
+
 template<skeleton_kind Skeleton, scalar Element>
 consteval
 auto
@@ -290,27 +306,37 @@ skeleton_words() -> std::span<const std::uint32_t>
 {
   if constexpr (Skeleton == skeleton_kind::transform)
   {
-    return transform_template<Element>();
+    return element_words<Element>(
+      transform_float_words, transform_int_words, transform_uint_words);
   }
   else if constexpr (Skeleton == skeleton_kind::reduce)
   {
-    return reduce_template<Element>();
+    return element_words<Element>(
+      reduce_float_words, reduce_int_words, reduce_uint_words);
   }
   else if constexpr (Skeleton == skeleton_kind::inclusive_scan)
   {
-    return scan_template<Element, scan_mode::inclusive>();
+    return element_words<Element>(
+      scan_inclusive_float_words,
+      scan_inclusive_int_words,
+      scan_inclusive_uint_words);
   }
   else if constexpr (Skeleton == skeleton_kind::exclusive_scan)
   {
-    return scan_template<Element, scan_mode::exclusive>();
+    return element_words<Element>(
+      scan_exclusive_float_words,
+      scan_exclusive_int_words,
+      scan_exclusive_uint_words);
   }
   else if constexpr (Skeleton == skeleton_kind::scatter)
   {
-    return scatter_template<Element>();
+    return element_words<Element>(
+      scatter_float_words, scatter_int_words, scatter_uint_words);
   }
   else if constexpr (Skeleton == skeleton_kind::predicate)
   {
-    return predicate_template<Element>();
+    return element_words<Element>(
+      predicate_float_words, predicate_int_words, predicate_uint_words);
   }
   else
   {
@@ -319,15 +345,15 @@ skeleton_words() -> std::span<const std::uint32_t>
       "fiat histogram and scatter skeletons take std::uint32_t elements");
     if constexpr (Skeleton == skeleton_kind::histogram)
     {
-      return histogram_template();
+      return histogram_uint_words;
     }
     else if constexpr (Skeleton == skeleton_kind::tile_histogram)
     {
-      return tile_histogram_template();
+      return tile_histogram_uint_words;
     }
     else
     {
-      return stable_scatter_template();
+      return stable_scatter_uint_words;
     }
   }
 }
