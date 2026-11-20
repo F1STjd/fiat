@@ -7,8 +7,8 @@ constexpr auto scatter8_words = fiat::compile<std::uint32_t>(
   fiat::stable_scatter<256>(fiat::digit<8> {}, 0U));
 constexpr auto tile4_words =
   fiat::compile<std::uint32_t>(fiat::tile_histogram<16>(fiat::digit<4> {}, 0U));
-constexpr auto scatter4_words =
-  fiat::compile<std::uint32_t>(fiat::stable_scatter<16>(fiat::digit<4> {}, 0U));
+constexpr auto scatter4_words = fiat::compile<std::uint32_t>(
+  fiat::stable_scatter<16, 1U>(fiat::digit<4> {}, 0U));
 
 auto
 main() -> int
