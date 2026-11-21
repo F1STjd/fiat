@@ -25,3 +25,17 @@ target_link_libraries(fiat_stage_probe PRIVATE fiat::fiat)
 target_link_libraries(fiat_stage_probe PRIVATE $<$<PLATFORM_ID:Windows>:stdc++exp>)
 set_target_properties(fiat_stage_probe PROPERTIES CXX_MODULE_STD ON)
 vkpp_enable_warnings(fiat_stage_probe)
+
+add_executable(fiat_graph_probe graph_probe.cpp)
+target_link_libraries(fiat_graph_probe PRIVATE fiat::fiat)
+target_link_libraries(fiat_graph_probe PRIVATE $<$<PLATFORM_ID:Windows>:stdc++exp>)
+set_target_properties(fiat_graph_probe PROPERTIES CXX_MODULE_STD ON)
+vkpp_enable_warnings(fiat_graph_probe)
+
+add_executable(fiat_graph_baseline graph_probe.cpp)
+target_compile_definitions(fiat_graph_baseline PRIVATE FIAT_GRAPH_BASELINE)
+target_link_libraries(fiat_graph_baseline PRIVATE fiat::fiat)
+target_link_libraries(
+  fiat_graph_baseline PRIVATE $<$<PLATFORM_ID:Windows>:stdc++exp>)
+set_target_properties(fiat_graph_baseline PROPERTIES CXX_MODULE_STD ON)
+vkpp_enable_warnings(fiat_graph_baseline)
