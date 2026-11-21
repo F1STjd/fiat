@@ -59,6 +59,7 @@ foreach(ELEMENT IN ITEMS float int uint)
     else()
       set(SCAN_EXCLUSIVE OpConstantFalse)
     endif()
+    fiat_add_template(scan_${MODE}_${ELEMENT} scan)
   endforeach()
 endforeach()
 
