@@ -315,4 +315,148 @@ analyze_dependencies(
     });
 }
 
+template<class... Nodes>
+consteval
+auto
+analyze(const std::tuple<Nodes...>& all_nodes)
+{
+  constexpr std::size_t                  node_count {sizeof...(Nodes)};
+  constexpr std::size_t                  port_count {(Nodes::port_count + ...)};
+  graph_analysis<node_count, port_count> result {};
+  std::array<std::size_t, node_count>    first_ports {};
+  std::array<std::size_t, node_count>    port_counts {};
+  std::array<std::size_t, node_count>    dispatch_counts {};
+  std::array<workspace_sizes, node_count> workspaces {};
+  std::array<graph_port, port_count>      ports {};
+  std::size_t                             node_position {};
+  std::size_t                             port_position {};
+  std::apply(
+    [ & ](const Nodes&... node) {
+      ((first_ports[ node_position ]  = port_position,
+         port_counts[ node_position ] = Nodes::port_count,
+         dispatch_counts[ node_position ] = Nodes::stage_type::dispatches.size(),
+         workspaces[ node_position++ ] =
+           workspace_of<typename Nodes::stage_type>,
+         std::ranges::copy(node.bound_ports, ports.begin() + port_position),
+         port_position += Nodes::port_count),
+        ...);
+    },
+    all_nodes);
+  analyze_dependencies(
+    result, first_ports, port_counts, dispatch_counts, ports);
+
+  std::array<std::size_t, 3UZ> explicit_bytes {};
+  std::ranges::for_each(
+    std::views::indices(port_count), [ & ](std::size_t position) -> void {
+      const auto& port        = ports[ position ];
+      const auto  prior_ports = std::span {ports}.first(position);
+      const auto  found =
+        std::ranges::find_if(prior_ports, [ & ](graph_port prior) -> bool {
+          return prior.allocation_identity == port.allocation_identity &&
+                 prior.region == port.region;
+        });
+      if (found != prior_ports.end())
+      {
+        const auto prior = static_cast<std::size_t>(
+          std::ranges::distance(prior_ports.begin(), found));
+        result.buffer_offsets[ position ] = result.buffer_offsets[ prior ];
+      }
+      else if (port.region != graph_buffer_region::external)
+      {
+        const auto region           = std::to_underlying(port.region) - 1UZ;
+        const auto allocation_bytes = std::ranges::max(
+          ports |
+          std::views::filter([ & ](const graph_port& candidate) -> bool {
+            return candidate.allocation_identity == port.allocation_identity &&
+                   candidate.region == port.region;
+          }) |
+          std::views::transform(&graph_port::bytes));
+        result.buffer_offsets[ position ]  = explicit_bytes[ region ];
+        explicit_bytes[ region ]          += allocation_bytes;
+      }
+    });
+
+  std::array<std::size_t, 3UZ> stage_bytes {};
+  std::ranges::for_each(
+    workspaces, [ & ](const workspace_sizes& workspace) -> void {
+      const auto regions = workspace.regions();
+      std::ranges::for_each(
+        std::views::indices(3UZ), [ & ](std::size_t region) -> void {
+          stage_bytes[ region ] =
+            std::max(stage_bytes[ region ], regions[ region ]);
+        });
+    });
+  result.requirements = {
+    .table_bytes     = explicit_bytes[ 0UZ ] + stage_bytes[ 0UZ ],
+    .ping_pong_bytes = explicit_bytes[ 1UZ ] + stage_bytes[ 1UZ ],
+    .scratch_bytes   = explicit_bytes[ 2UZ ] + stage_bytes[ 2UZ ],
+  };
+
+  std::ranges::fill(
+    result.workspace_offsets,
+    graph_workspace_offsets {
+      .table     = explicit_bytes[ 0UZ ],
+      .ping_pong = explicit_bytes[ 0UZ ],
+      .scratch   = explicit_bytes[ 0UZ ],
+    });
+
+  result
+    .port_sizes_valid = std::ranges::all_of(ports, [](const graph_port& port) {
+    return port.size == 0U || port.bytes == port.size * port.element_bytes;
+  });
+
+  result.final_allocation_identity = std::numeric_limits<std::size_t>::max();
+
+  const auto exchange = std::ranges::find_if(ports, [](const graph_port& port) {
+    return port.region == graph_buffer_region::ping_pong;
+  });
+  if (exchange != ports.end())
+  {
+    const auto source =
+      std::ranges::find_if(ports, [ & ](const graph_port& port) -> bool {
+        return port.initially_available &&
+               port.region == graph_buffer_region::external &&
+               port.bytes == exchange->bytes;
+      });
+    if (source != ports.end())
+    {
+      result.ping_pong_pass_count = static_cast<
+        std::size_t
+      >(std::ranges::count_if(ports, [ & ](const graph_port& port) -> bool {
+        return writes(port.access) &&
+               ((port.region == graph_buffer_region::external &&
+                  port.allocation_identity == source->allocation_identity) ||
+                 (port.region == graph_buffer_region::ping_pong &&
+                   port.allocation_identity == exchange->allocation_identity));
+      }));
+      result.final_allocation_identity =
+        result.ping_pong_pass_count % 2UZ == 0UZ
+          ? source->allocation_identity
+          : exchange->allocation_identity;
+      result.final_allocation_region =
+        result.ping_pong_pass_count % 2UZ == 0UZ
+          ? source->region
+          : exchange->region;
+    }
+  }
+  return result;
+}
+
+export template<class... Nodes>
+struct graph
+{
+  std::tuple<Nodes...>                                        nodes;
+  graph_analysis<sizeof...(Nodes), (Nodes::port_count + ...)> analysis;
+};
+
+export
+template<class... Nodes>
+  requires (sizeof...(Nodes) >= 1UZ)
+consteval auto
+make_graph(Nodes... nodes) -> graph<Nodes...>
+{
+  const std::tuple all_nodes {std::move(nodes)...};
+  return {.nodes = all_nodes, .analysis = analyze(all_nodes)};
+}
+
 } // namespace fiat
