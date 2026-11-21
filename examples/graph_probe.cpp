@@ -16,7 +16,7 @@ struct probe_stage
   template<fiat::scalar>
   using ports = std::tuple<Ports...>;
 
-  using plsices = std::tuple<>;
+  using splices = std::tuple<>;
   std::tuple<> arguments {};
 };
 
@@ -156,6 +156,147 @@ constexpr auto graph_one = fiat::make_graph(
 static_assert(graph_one.analysis.dispatch_count == 2UZ);
 static_assert(graph_one.analysis.barrier_count == 1UZ);
 static_assert(graph_one.analysis.requirements.scratch_bytes == 4'104UZ);
+
+constexpr auto graph_two = fiat::make_graph(
+  fiat::make_node(branch_reduce_probe {}, float_intermediate, float_reduction),
+  fiat::make_node(
+    binary_transform_probe {}, float_reduction, float_scan, float_join),
+  fiat::make_node(
+    fiat::transform(fiat::square {}), float_source, float_intermediate),
+  fiat::make_node(
+    fiat::inclusive_scan(fiat::plus {}, 0.0F), float_intermediate, float_scan));
+static_assert(graph_two.analysis.stage_barrier_count == 2UZ);
+static_assert(graph_two.analysis.topological_order_valid);
+static_assert(
+  graph_two.analysis.topological_order ==
+  std::array<std::size_t, 4UZ> {2UZ, 0UZ, 3UZ, 1UZ});
+
+constexpr fiat::graph_buffer<std::uint32_t> flags {
+  .identity            = 5UZ,
+  .allocation_identity = 5UZ,
+  .bytes               = element_bytes,
+  .initially_available = false,
+};
+constexpr fiat::graph_buffer<std::uint32_t> indices {
+  .identity            = 6UZ,
+  .allocation_identity = 6UZ,
+  .bytes               = element_bytes,
+  .initially_available = false,
+};
+constexpr fiat::graph_buffer<std::uint32_t> kept_count {
+  .identity            = 7UZ,
+  .allocation_identity = 7UZ,
+  .bytes               = sizeof(std::uint32_t),
+  .region              = fiat::graph_buffer_region::table,
+  .initially_available = false,
+};
+constexpr auto graph_three = fiat::make_graph(
+  fiat::make_node(
+    fiat::predicate(fiat::not_equal {}, 0.0F), float_source, flags),
+  fiat::make_node(fiat::exclusive_scan(fiat::plus {}, 0U), flags, indices),
+  fiat::make_node(
+    fiat::scatter(), float_source, float_join, flags, indices, kept_count));
+static_assert(graph_three.analysis.dispatch_count == 4UZ);
+static_assert(graph_three.analysis.barrier_count == 3UZ);
+static_assert(graph_three.analysis.port_sizes_valid);
+
+constexpr fiat::graph_buffer<std::uint32_t> unsigned_source_zero {
+  .identity            = 20UZ,
+  .allocation_identity = 0UZ,
+  .bytes               = element_bytes,
+};
+constexpr fiat::graph_buffer<std::uint32_t> unsigned_exchange_one {
+  .identity            = 21UZ,
+  .allocation_identity = 1UZ,
+  .bytes               = element_bytes,
+  .region              = fiat::graph_buffer_region::ping_pong,
+  .initially_available = false,
+};
+constexpr fiat::graph_buffer<std::uint32_t> unsigned_source_two {
+  .identity            = 22UZ,
+  .allocation_identity = 0UZ,
+  .bytes               = element_bytes,
+  .initially_available = false,
+};
+constexpr fiat::graph_buffer<std::uint32_t> unsigned_exchange_three {
+  .identity            = 23UZ,
+  .allocation_identity = 1UZ,
+  .bytes               = element_bytes,
+  .region              = fiat::graph_buffer_region::ping_pong,
+  .initially_available = false,
+};
+constexpr fiat::graph_buffer<std::uint32_t> unsigned_source_four {
+  .identity            = 24UZ,
+  .allocation_identity = 0UZ,
+  .bytes               = element_bytes,
+  .initially_available = false,
+};
+
+template<std::size_t Pass>
+consteval
+auto
+radix_pass(auto input, auto output)
+{
+  constexpr fiat::graph_buffer<std::uint32_t> histogram {
+    .identity            = 30UZ + 3UZ * Pass,
+    .allocation_identity = 2UZ,
+    .bytes               = 256UZ * sizeof(std::uint32_t),
+    .region              = fiat::graph_buffer_region::table,
+    .initially_available = false,
+  };
+  constexpr fiat::graph_buffer<std::uint32_t> offsets {
+    .identity            = 31UZ + 3UZ * Pass,
+    .allocation_identity = 3UZ,
+    .bytes               = 256UZ * sizeof(std::uint32_t),
+    .region              = fiat::graph_buffer_region::table,
+    .initially_available = false,
+  };
+  constexpr fiat::graph_buffer<std::uint32_t> companion {
+    .identity            = 32UZ + 3UZ * Pass,
+    .allocation_identity = 4UZ,
+    .bytes               = Pass == 0UZ ? element_bytes / 2UZ : element_bytes,
+    .region              = fiat::graph_buffer_region::scratch,
+    .initially_available = false,
+  };
+  return std::tuple {
+    fiat::make_node(
+      fiat::tile_histogram<256U>(fiat::digit<8U> {}, 0U), input, histogram),
+    fiat::make_node(fiat::exclusive_scan(fiat::plus {}, 0U), histogram, offsets),
+    fiat::make_node(
+      fiat::stable_scatter<256U>(fiat::digit<8U> {}, 0U),
+      input,
+      output,
+      histogram,
+      offsets,
+      companion),
+  };
+}
+
+constexpr auto graph_four_nodes = std::tuple_cat(
+  radix_pass<0UZ>(unsigned_source_zero, unsigned_exchange_one),
+  radix_pass<1UZ>(unsigned_exchange_one, unsigned_source_two),
+  radix_pass<2UZ>(unsigned_source_two, unsigned_exchange_three),
+  radix_pass<3UZ>(unsigned_exchange_three, unsigned_source_four));
+constexpr auto graph_four = std::apply(
+  [](auto... nodes) { return fiat::make_graph(nodes...); }, graph_four_nodes);
+static_assert(graph_four.analysis.dispatch_count == 16UZ);
+static_assert(graph_four.analysis.barrier_count == 15UZ);
+static_assert(graph_four.analysis.edges[ 0UZ ][ 5UZ ]);
+static_assert(graph_four.analysis.ping_pong_pass_count == 4UZ);
+static_assert(graph_four.analysis.final_allocation_identity == 0UZ);
+static_assert(
+  graph_four.analysis.final_allocation_region ==
+  fiat::graph_buffer_region::external);
+static_assert(
+  graph_four.analysis.requirements.ping_pong_bytes == element_bytes);
+static_assert(graph_four.analysis.buffer_offsets[ 8UZ ] == 0UZ);
+static_assert(
+  graph_four.analysis.workspace_offsets[ 1UZ ].scratch == element_bytes);
+
+#if 0
+constexpr auto graph_five = fiat::make_node(
+  fiat::reduce(fiat::plus {}, 0U), float_source);
+#endif
 
 #endif
 
