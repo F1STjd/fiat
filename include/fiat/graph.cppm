@@ -396,8 +396,8 @@ analyze(const std::tuple<Nodes...>& all_nodes)
     result.workspace_offsets,
     graph_workspace_offsets {
       .table     = explicit_bytes[ 0UZ ],
-      .ping_pong = explicit_bytes[ 0UZ ],
-      .scratch   = explicit_bytes[ 0UZ ],
+      .ping_pong = explicit_bytes[ 1UZ ],
+      .scratch   = explicit_bytes[ 2UZ ],
     });
 
   result
