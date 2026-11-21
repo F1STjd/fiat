@@ -198,7 +198,7 @@ struct graph_analysis
 {
   std::array<std::array<bool, NodeCount>, NodeCount> edges {};
   std::array<std::size_t, NodeCount>                 topological_order {};
-  std::array<std::size_t, NodeCount>                 barrier_level {};
+  std::array<std::size_t, NodeCount>                 barrier_levels {};
   std::array<graph_workspace_offsets, NodeCount>     workspace_offsets {};
   std::array<std::size_t, PortCount>                 buffer_offsets {};
   workspace_sizes                                    requirements {};
@@ -221,5 +221,98 @@ constexpr
 auto
 writes(port_access access) -> bool
 { return access != port_access::read; }
+
+template<std::size_t NodeCount, std::size_t PortCount>
+consteval
+void
+analyze_dependencies(
+  graph_analysis<NodeCount, PortCount>&     result,
+  const std::array<std::size_t, NodeCount>& first_ports,
+  const std::array<std::size_t, NodeCount>& port_counts,
+  const std::array<std::size_t, NodeCount>& dispatch_counts,
+  const std::array<graph_port, PortCount>&  ports)
+{
+  const auto node_ports = [ & ](std::size_t node) {
+    return std::span {ports}.subspan(first_ports[ node ], port_counts[ node ]);
+  };
+
+  constexpr auto node_indices = std::views::indices(NodeCount);
+
+  std::ranges::for_each(node_indices, [ & ](std::size_t source) -> void {
+    std::ranges::for_each(node_indices, [ & ](std::size_t target) -> void {
+      if (source == target) { return; }
+      result.edges[ source ][ target ] = std::ranges::any_of(
+        node_ports(source), [ & ](const graph_port& first) -> bool {
+          return std::ranges::any_of(
+            node_ports(target), [ & ](const graph_port& second) -> bool {
+              const bool logical_dependency =
+                first.identity == second.identity &&
+                ((!first.initially_available &&
+                   writes(first.access) &&
+                   reads(second.access)) ||
+                  (first.initially_available &&
+                    source < target &&
+                    ((writes(first.access) && reads(second.access)) ||
+                      (reads(first.access) && writes(second.access)))));
+              const bool physical_write_after_read =
+                source < target &&
+                first.identity != second.identity &&
+                first.allocation_identity == second.allocation_identity &&
+                first.region == second.region &&
+                reads(first.access) &&
+                writes(second.access);
+              return logical_dependency || physical_write_after_read;
+            });
+        });
+    });
+  });
+
+  std::array<bool, NodeCount> emitted {};
+  std::ranges::for_each(node_indices, [ & ](std::size_t position) -> void {
+    const auto found =
+      std::ranges::find_if(node_indices, [ & ](std::size_t candidate) -> bool {
+        return !emitted[ candidate ] &&
+               std::ranges::all_of(
+                 node_indices, [ & ](std::size_t predecessor) -> bool {
+                   return !result.edges[ predecessor ][ candidate ] ||
+                          emitted[ predecessor ];
+                 });
+      });
+    result.topological_order[ position ] = *found;
+    emitted[ *found ]                    = true;
+  });
+
+  std::ranges::for_each(
+    result.topological_order, [ & ](std::size_t node) -> void {
+      std::ranges::for_each(
+        node_indices, [ & ](std::size_t predecessor) -> void {
+          if (result.edges[ predecessor ][ node ])
+          {
+            result.barrier_levels[ node ] = std::max(
+              result.barrier_levels[ node ],
+              result.barrier_levels[ predecessor ] + 1UZ);
+          }
+        });
+    });
+  result.stage_barrier_count = std::ranges::max(result.barrier_levels);
+  result.dispatch_count =
+    std::ranges::fold_left(dispatch_counts, 0UZ, std::plus {});
+  result.barrier_count =
+    std::ranges::fold_left(
+      dispatch_counts,
+      0UZ,
+      [](std::size_t count, std::size_t dispatches) -> std::size_t {
+        return count + dispatches - 1UZ;
+      }) +
+    result.stage_barrier_count;
+  result.topological_order_valid =
+    std::ranges::all_of(node_indices, [ & ](std::size_t earlier) -> bool {
+      return std::ranges::all_of(node_indices, [ & ](std::size_t later) -> bool {
+        return !result.edges[ earlier ][ later ] ||
+               std::ranges::find(result.topological_order, earlier) <
+                 std::ranges::find(result.topological_order, later);
+      });
+    });
+}
 
 } // namespace fiat
