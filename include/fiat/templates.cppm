@@ -20,6 +20,9 @@ auto
 assemble_words(const std::array<unsigned char, Size>& bytes)
   -> std::array<std::uint32_t, Size / sizeof(std::uint32_t)>
 {
+  static_assert(
+    std::endian::native == std::endian::little,
+    "assemble_words reads embedded SPIR-V as little-endian words");
   auto words = std::bit_cast<
     std::array<std::uint32_t, Size / sizeof(std::uint32_t)>
   >(bytes);
