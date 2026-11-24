@@ -218,7 +218,7 @@
                OpBranchConditional %is_first %write %write_done
       %write = OpLabel
 %final = OpFunctionCall %@ELEMENT@ %fiat_epilogue %total
-%result_member = OpAccessChain %push_element_pointer % push %one
+%result_member = OpAccessChain %push_element_pointer %push %one
 %result_pointer = OpLoad %element_pointer %result_member
                OpStore %result_pointer %final Aligned|NonPrivatePointer 4
                OpAtomicStore %counter_pointer %device %semantics_release %zero
