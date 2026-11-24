@@ -156,6 +156,7 @@ constexpr auto graph_one = fiat::make_graph(
 static_assert(graph_one.analysis.dispatch_count == 2UZ);
 static_assert(graph_one.analysis.barrier_count == 1UZ);
 static_assert(graph_one.analysis.requirements.scratch_bytes == 4'104UZ);
+static_assert(!graph_one.analysis.final_allocation.has_value());
 
 constexpr auto graph_two = fiat::make_graph(
   fiat::make_node(branch_reduce_probe {}, float_intermediate, float_reduction),
@@ -283,20 +284,22 @@ static_assert(graph_four.analysis.dispatch_count == 16UZ);
 static_assert(graph_four.analysis.barrier_count == 15UZ);
 static_assert(graph_four.analysis.edges[ 0UZ ][ 5UZ ]);
 static_assert(graph_four.analysis.ping_pong_pass_count == 4UZ);
-static_assert(graph_four.analysis.final_allocation_identity == 0UZ);
 static_assert(
-  graph_four.analysis.final_allocation_region ==
-  fiat::graph_buffer_region::external);
+  graph_four.analysis.final_allocation ==
+  fiat::graph_allocation {
+    .identity = 0UZ,
+    .region   = fiat::graph_buffer_region::external,
+  });
 static_assert(
   graph_four.analysis.requirements.ping_pong_bytes == element_bytes);
 static_assert(graph_four.analysis.buffer_offsets[ 8UZ ] == 0UZ);
 static_assert(
   graph_four.analysis.workspace_offsets[ 1UZ ].scratch == element_bytes);
 
-#if 0
+  #if 0
 constexpr auto graph_five = fiat::make_node(
   fiat::reduce(fiat::plus {}, 0U), float_source);
-#endif
+  #endif
 
 #endif
 

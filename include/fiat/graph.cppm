@@ -193,6 +193,16 @@ export struct graph_workspace_offsets
   std::size_t scratch {};
 };
 
+export struct graph_allocation
+{
+  std::size_t         identity {};
+  graph_buffer_region region {};
+
+  constexpr
+  auto
+  operator ==(const graph_allocation&) const -> bool = default;
+};
+
 export template<std::size_t NodeCount, std::size_t PortCount>
 struct graph_analysis
 {
@@ -205,11 +215,10 @@ struct graph_analysis
   std::size_t                                        dispatch_count {};
   std::size_t                                        stage_barrier_count {};
   std::size_t                                        barrier_count {};
-  std::size_t         final_allocation_identity {};
-  graph_buffer_region final_allocation_region {};
-  std::size_t         ping_pong_pass_count {};
-  bool                port_sizes_valid {};
-  bool                topological_order_valid {};
+  std::size_t                                        ping_pong_pass_count {};
+  std::optional<graph_allocation>                    final_allocation {};
+  bool                                               port_sizes_valid {};
+  bool                                               topological_order_valid {};
 };
 
 constexpr
@@ -405,8 +414,6 @@ analyze(const std::tuple<Nodes...>& all_nodes)
     return port.size == 0U || port.bytes == port.size * port.element_bytes;
   });
 
-  result.final_allocation_identity = std::numeric_limits<std::size_t>::max();
-
   const auto exchange = std::ranges::find_if(ports, [](const graph_port& port) {
     return port.region == graph_buffer_region::ping_pong;
   });
@@ -429,14 +436,12 @@ analyze(const std::tuple<Nodes...>& all_nodes)
                  (port.region == graph_buffer_region::ping_pong &&
                    port.allocation_identity == exchange->allocation_identity));
       }));
-      result.final_allocation_identity =
-        result.ping_pong_pass_count % 2UZ == 0UZ
-          ? source->allocation_identity
-          : exchange->allocation_identity;
-      result.final_allocation_region =
-        result.ping_pong_pass_count % 2UZ == 0UZ
-          ? source->region
-          : exchange->region;
+      const graph_port& final_port =
+        result.ping_pong_pass_count % 2UZ == 0UZ ? *source : *exchange;
+      result.final_allocation = graph_allocation {
+        .identity = final_port.allocation_identity,
+        .region   = final_port.region,
+      };
     }
   }
   return result;
