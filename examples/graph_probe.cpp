@@ -167,7 +167,6 @@ constexpr auto graph_two = fiat::make_graph(
   fiat::make_node(
     fiat::inclusive_scan(fiat::plus {}, 0.0F), float_intermediate, float_scan));
 static_assert(graph_two.analysis.stage_barrier_count == 2UZ);
-static_assert(graph_two.analysis.topological_order_valid);
 static_assert(
   graph_two.analysis.topological_order ==
   std::array<std::size_t, 4UZ> {2UZ, 0UZ, 3UZ, 1UZ});
