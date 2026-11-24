@@ -35,6 +35,28 @@ struct graph_message
   std::size_t                length {};
 
   constexpr
+  void
+  append(std::string_view text)
+  {
+    const auto copied = text.substr(0UZ, Capacity - length);
+    std::ranges::copy(copied, characters.begin() + length);
+    length += copied.size();
+  }
+
+  constexpr
+  void
+  append_number(std::size_t number)
+  {
+    std::array<char, 20UZ> digits {};
+    if (
+      const auto [ end, _ ] =
+        std::to_chars(digits.data(), digits.data() + digits.size(), number))
+    {
+      append(std::string_view {digits.data(), end});
+    }
+  }
+
+  constexpr
   auto
   data() const -> const char*
   { return characters.data(); }
@@ -55,23 +77,15 @@ inline constexpr std::string_view scalar_name =
 template<std::size_t Position, scalar Expected, scalar Actual>
 consteval
 auto
-port_mismatch_message() -> graph_message<96UZ>
+port_mismatch_message() -> graph_message<160UZ>
 {
-  graph_message<96> result {};
-  auto              destination = result.characters.begin();
-  const auto        append      = [ & ](std::string_view text) {
-    destination = std::ranges::copy(text, destination).out;
-  };
-  append("fiat graph port ");
-  [[maybe_unused]] const auto [ end, conversion_error ] =
-    std::to_chars(destination, result.characters.end(), Position);
-  destination = end;
-  append(" expects ");
-  append(scalar_name<Expected>);
-  append(" but received ");
-  append(scalar_name<Actual>);
-  result.length =
-    static_cast<std::size_t>(destination - result.characters.begin());
+  graph_message<160> result {};
+  result.append("fiat graph port ");
+  result.append_number(Position);
+  result.append(" expects ");
+  result.append(scalar_name<Expected>);
+  result.append(" but_received ");
+  result.append(scalar_name<Actual>);
   return result;
 }
 
