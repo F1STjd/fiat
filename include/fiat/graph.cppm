@@ -441,14 +441,29 @@ analyze(const std::tuple<Nodes...>& all_nodes)
     }
   }
 
-  std::array<std::size_t, 3UZ> stage_bytes {};
-  for (const auto& workspace : workspaces)
+  std::vector<std::array<std::size_t, 3UZ>> level_bytes(
+    result.stage_barrier_count + 1UZ, std::array<std::size_t, 3UZ> {});
+  for (const auto node : result.topological_order)
   {
-    const auto regions = workspace.regions();
+    const auto level                 = result.barrier_levels[ node ];
+    const auto regions               = workspaces[ node ].regions();
+    result.workspace_offsets[ node ] = {
+      .table     = explicit_bytes[ 0UZ ] + level_bytes[ level ][ 0UZ ],
+      .ping_pong = explicit_bytes[ 1UZ ] + level_bytes[ level ][ 1UZ ],
+      .scratch   = explicit_bytes[ 2UZ ] + level_bytes[ level ][ 2UZ ],
+    };
     for (const auto region : std::views::indices(3UZ))
     {
-      stage_bytes[ region ] =
-        std::max(stage_bytes[ region ], regions[ region ]);
+      level_bytes[ level ][ region ] += regions[ region ];
+    }
+  }
+
+  std::array<std::size_t, 3UZ> stage_bytes {};
+  for (const auto& bytes : level_bytes)
+  {
+    for (const auto region : std::views::indices(3UZ))
+    {
+      stage_bytes[ region ] = std::max(stage_bytes[ region ], bytes[ region ]);
     }
   }
   result.requirements = {
@@ -456,14 +471,6 @@ analyze(const std::tuple<Nodes...>& all_nodes)
     .ping_pong_bytes = explicit_bytes[ 1UZ ] + stage_bytes[ 1UZ ],
     .scratch_bytes   = explicit_bytes[ 2UZ ] + stage_bytes[ 2UZ ],
   };
-
-  std::ranges::fill(
-    result.workspace_offsets,
-    graph_workspace_offsets {
-      .table     = explicit_bytes[ 0UZ ],
-      .ping_pong = explicit_bytes[ 1UZ ],
-      .scratch   = explicit_bytes[ 2UZ ],
-    });
 
   const auto exchange = std::ranges::find_if(ports, [](const graph_port& port) {
     return port.region == graph_buffer_region::ping_pong;
