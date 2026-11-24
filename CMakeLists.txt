@@ -51,7 +51,7 @@ function(fiat_add_template NAME TEMPLATE)
 endfunction()
 
 foreach(ELEMENT IN ITEMS float int uint)
-  foreach(TEMPLATE IN ITEMS transform reduce scatter predicate)
+  foreach(TEMPLATE IN ITEMS transform transform_with reduce scatter predicate)
     fiat_add_template(${TEMPLATE}_${ELEMENT} ${TEMPLATE})
   endforeach()
   foreach(MODE IN ITEMS inclusive exclusive)

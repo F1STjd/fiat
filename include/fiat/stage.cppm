@@ -44,6 +44,7 @@ export struct stage_schedule
 export enum class skeleton_kind : std::uint8_t
 {
   transform,
+  transform_with,
   reduce,
   inclusive_scan,
   exclusive_scan,
@@ -315,6 +316,13 @@ skeleton_words() -> std::span<const std::uint32_t>
   {
     return element_words<Element>(
       transform_float_words, transform_int_words, transform_uint_words);
+  }
+  else if constexpr (Skeleton == skeleton_kind::transform_with)
+  {
+    return element_words<Element>(
+      transform_with_float_words,
+      transform_with_int_words,
+      transform_with_uint_words);
   }
   else if constexpr (Skeleton == skeleton_kind::reduce)
   {

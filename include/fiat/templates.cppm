@@ -42,27 +42,36 @@ inline constexpr auto transform_float_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "transform_float.spv"
   }));
-
 inline constexpr auto transform_int_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "transform_int.spv"
   }));
-
 inline constexpr auto transform_uint_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "transform_uint.spv"
+  }));
+
+inline constexpr auto transform_with_float_words =
+  assemble_words(std::to_array<unsigned char>({
+#embed "transform_with_float.spv"
+  }));
+inline constexpr auto transform_with_int_words =
+  assemble_words(std::to_array<unsigned char>({
+#embed "transform_with_int.spv"
+  }));
+inline constexpr auto transform_with_uint_words =
+  assemble_words(std::to_array<unsigned char>({
+#embed "transform_with_uint.spv"
   }));
 
 inline constexpr auto reduce_float_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "reduce_float.spv"
   }));
-
 inline constexpr auto reduce_int_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "reduce_int.spv"
   }));
-
 inline constexpr auto reduce_uint_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "reduce_uint.spv"
@@ -72,27 +81,22 @@ inline constexpr auto scan_inclusive_float_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "scan_inclusive_float.spv"
   }));
-
 inline constexpr auto scan_inclusive_int_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "scan_inclusive_int.spv"
   }));
-
 inline constexpr auto scan_inclusive_uint_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "scan_inclusive_uint.spv"
   }));
-
 inline constexpr auto scan_exclusive_float_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "scan_exclusive_float.spv"
   }));
-
 inline constexpr auto scan_exclusive_int_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "scan_exclusive_int.spv"
   }));
-
 inline constexpr auto scan_exclusive_uint_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "scan_exclusive_uint.spv"
@@ -102,12 +106,10 @@ inline constexpr auto predicate_float_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "predicate_float.spv"
   }));
-
 inline constexpr auto predicate_int_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "predicate_int.spv"
   }));
-
 inline constexpr auto predicate_uint_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "predicate_uint.spv"
@@ -117,12 +119,10 @@ inline constexpr auto scatter_float_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "scatter_float.spv"
   }));
-
 inline constexpr auto scatter_int_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "scatter_int.spv"
   }));
-
 inline constexpr auto scatter_uint_words =
   assemble_words(std::to_array<unsigned char>({
 #embed "scatter_uint.spv"
