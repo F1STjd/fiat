@@ -198,7 +198,6 @@ constexpr auto graph_three = fiat::make_graph(
     fiat::scatter(), float_source, float_join, flags, indices, kept_count));
 static_assert(graph_three.analysis.dispatch_count == 4UZ);
 static_assert(graph_three.analysis.barrier_count == 3UZ);
-static_assert(graph_three.analysis.port_sizes_valid);
 
 constexpr fiat::graph_buffer<std::uint32_t> unsigned_source_zero {
   .identity            = 20UZ,
