@@ -731,7 +731,7 @@ export template<scalar Uniform, class Operation>
 struct transform_with_stage
 {
   static constexpr stage_class    kind {stage_class::elementwise};
-  static constexpr skeleton_kind  skeleton {skeleton_kind::transform};
+  static constexpr skeleton_kind  skeleton {skeleton_kind::transform_with};
   static constexpr stage_schedule schedule {};
   static constexpr std::array     dispatches {
     dispatch_rule {.entry = transform_entry},
@@ -740,56 +740,36 @@ struct transform_with_stage
   template<scalar Element>
   using ports = std::tuple<
     port<Element, port_access::read>,
-    port<Element, port_access::write>
+    port<Element, port_access::write>,
+    port<Element, port_access::read, 1U>
   >;
-
-  using leading_arguments = std::tuple<std::uint32_t, std::uint32_t>;
 
   using splices =
     std::tuple<splice_operation<splice_point::uniform_operation, Operation>>;
 
-  decltype(std::tuple_cat(
-    std::declval<leading_arguments>(),
-    std::declval<typename arguments_of<Operation>::type>())) arguments {};
+  typename arguments_of<Operation>::type arguments {};
 };
 
 export
-template<class UniformSource, class Operation, class... Arguments>
-  requires (requires(const UniformSource& uniform) {
-    typename UniformSource::element_type;
-    requires scalar<typename UniformSource::element_type>;
-    { uniform.address() } -> std::convertible_to<std::uint64_t>;
-  } && scalar<typename UniformSource::element_type>)
+template<scalar Uniform, class Operation, class... Arguments>
 constexpr auto
-transform_with(const UniformSource& uniform, Operation, Arguments... arguments)
-  -> transform_with_stage<
-    typename UniformSource::element_type,
-    bound_uniform_operation<
-      typename UniformSource::element_type,
-      Operation,
-      Arguments...
-    >
-  >
+transform_with(Operation, Arguments... arguments) -> transform_with_stage<
+  Uniform,
+  bound_uniform_operation<Uniform, Operation, Arguments...>
+>
 {
   static_assert(
     std::is_empty_v<Operation>,
     "fiat::transform_with cannot read lambda captures; pass runtime values as "
-    "arguments: fiat::transform_with(scalar, f, value)");
+    "arguments: fiat::transform_with<Uniform>(f, value)");
   static_assert(
     (scalar<Arguments> && ...),
-    "fiat::transform_with arguments must be float std::int32_t or "
+    "fiat::transform_with arguments must be float, std::int32_t or "
     "std::uint32_t");
   static_assert(
     sizeof...(Arguments) <= argument_capacity - 2UZ,
-    "fiat::transform_with takes at most 24 further runtime arguments");
-  const auto address = static_cast<std::uint64_t>(uniform.address());
-  return {
-    .arguments = {
-      static_cast<std::uint32_t>(address),
-      static_cast<std::uint32_t>(address >> 32U),
-      arguments...,
-    },
-  };
+    "fiat::transform_with takes at most 24 runtime arguments");
+  return {.arguments = {arguments...}};
 }
 
 export

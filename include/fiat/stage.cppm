@@ -431,13 +431,14 @@ trace_splice() -> std::vector<instruction>
   else if constexpr (Splice::point == splice_point::uniform_operation)
   {
     static_assert(
-      FirstSlot == 2UZ && ArgumentMember == bespoke_argument_member,
-      "a uniform operation reads its uniform from argument words 0 and 1 of "
-      "push member 4");
+      FirstSlot == 0UZ && ArgumentMember == uniform_argument_member,
+      "a uniform operation reads its uniform from push_member 2 and its "
+      "arguments from push member 5");
     return detail::trace_with_uniform<
       Element,
       typename operation_type::uniform_type,
-      operation_type
+      operation_type,
+      ArgumentMember
     >();
   }
   else

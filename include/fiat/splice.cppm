@@ -198,6 +198,16 @@ splice(
                item[ 3 ] == parameter_type;
       });
 
+    const auto push_element_pointer = std::ranges::find_if(
+      items, [ & ](std::span<const std::uint32_t> item) -> bool {
+        return opcode_of(item.front()) ==
+                 std::to_underlying(spirv::opcode::type_pointer) &&
+               item[ 2 ] ==
+                 std::to_underlying(spirv::storage_class::push_constant) &&
+               item[ 3 ] ==
+                 (element_pointer == items.end() ? 0U : (*element_pointer)[ 1 ]);
+      });
+
     return {
       .type          = parameter_type,
       .return_type   = (*declaration)[ 1 ],
@@ -210,6 +220,8 @@ splice(
       .push          = (*push_variable)[ 2 ],
       .element_pointer =
         element_pointer == items.end() ? 0U : (*element_pointer)[ 1 ],
+      .push_element_pointer =
+        push_element_pointer == items.end() ? 0U : (*push_element_pointer)[ 1 ],
       .ulong_type   = ulong_type == items.end() ? 0U : (*ulong_type)[ 1 ],
       .glsl_std_450 = glsl_std_450 == items.end() ? 0U : (*glsl_std_450)[ 1 ],
       .bool_type    = bool_type == items.end() ? 0U : (*bool_type)[ 1 ],
@@ -235,7 +247,7 @@ splice(
   for (const auto& entry : traces)
   {
     temporaries += static_cast<std::uint32_t>(
-      5Z *
+      2Z *
       std::ranges::count(
         entry.instructions, operation::uniform_load, &instruction::code));
   }

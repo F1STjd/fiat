@@ -205,7 +205,7 @@ trace_uniform_call(
     value<Arguments> {
       target,
       target.emit_argument(
-        kind_of<Arguments>, static_cast<std::uint32_t>(Slots + 2U)),
+        kind_of<Arguments>, static_cast<std::uint32_t>(Slots)),
     }...,
   };
 
@@ -337,7 +337,12 @@ trace_binary() -> std::vector<instruction>
   return std::move(target).instructions();
 }
 
-template<scalar Element, scalar Uniform, class Operation>
+template<
+  scalar Element,
+  scalar Uniform,
+  class Operation,
+  std::uint32_t ArgumentMember = uniform_argument_member
+>
   requires uniform_traceable<Operation, Element, Uniform>
 constexpr
 auto
@@ -345,9 +350,11 @@ trace_with_uniform() -> std::vector<instruction>
 {
   using argument_tuple = typename arguments_of<Operation>::type;
 
-  recorder       target {};
+  recorder       target {ArgumentMember};
   value<Element> parameter {target, target.emit_parameter(kind_of<Element>)};
-  value<Uniform> uniform {target, target.emit_uniform(kind_of<Uniform>, 0U)};
+  value<Uniform> uniform {
+    target, target.emit_uniform(kind_of<Uniform>, uniform_port_member)
+  };
   trace_uniform_call<Operation>(
     target,
     parameter,
@@ -426,6 +433,7 @@ struct function_layout
   std::uint32_t uint_pointer {};
   std::uint32_t push {};
   std::uint32_t element_pointer {};
+  std::uint32_t push_element_pointer {};
   std::uint32_t ulong_type {};
   std::uint32_t glsl_std_450 {};
   std::uint32_t bool_type {};
@@ -671,42 +679,24 @@ emit_definition(
     }
     case operation::uniform_load :
     {
-      const auto low_half       = module_id(layout, item.left);
-      const auto high_half      = module_id(layout, item.right);
-      const auto shift          = module_id(layout, item.literal);
-      const auto base           = item.result - 5U;
-      const auto high_half_wide = module_id(layout, base);
-      const auto low_half_wide  = module_id(layout, base + 1U);
-      const auto shifted        = module_id(layout, base + 2U);
-      const auto address        = module_id(layout, base + 3U);
-      const auto pointer        = module_id(layout, base + 4U);
+      const auto member         = module_id(layout, item.left);
+      const auto base           = item.result - 2U;
+      const auto member_pointer = module_id(layout, base);
+      const auto pointer        = module_id(layout, base + 1U);
       out.emit(
-        spirv::opcode::uconvert,
-        {layout.ulong_type, high_half_wide, high_half});
-      out.emit(
-        spirv::opcode::uconvert, {layout.ulong_type, low_half_wide, low_half});
-      out.emit(
-        spirv::opcode::shift_left_logical,
+        spirv::opcode::access_chain,
         {
-          layout.ulong_type,
-          shifted,
-          high_half_wide,
-          shift,
+          layout.push_element_pointer,
+          member_pointer,
+          layout.push,
+          member,
         });
       out.emit(
-        spirv::opcode::bitwise_or,
-        {
-          layout.ulong_type,
-          address,
-          shifted,
-          low_half_wide,
-        });
-      out.emit(
-        spirv::opcode::convert_u_to_ptr,
+        spirv::opcode::load,
         {
           layout.element_pointer,
           pointer,
-          address,
+          member_pointer,
         });
       out.emit(
         spirv::opcode::load,

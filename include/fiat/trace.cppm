@@ -59,6 +59,8 @@ enum class comparison : std::uint32_t
 };
 
 inline constexpr std::uint32_t bespoke_argument_member {4U};
+inline constexpr std::uint32_t uniform_port_member {2U};
+inline constexpr std::uint32_t uniform_argument_member {5U};
 
 export struct instruction
 {
@@ -103,32 +105,11 @@ public:
 
   constexpr
   auto
-  emit_uniform(scalar_kind kind, std::uint32_t slot) -> std::uint32_t
+  emit_uniform(scalar_kind kind, std::uint32_t port_member) -> std::uint32_t
   {
-    const auto member = emit_constant(scalar_kind::uint32, argument_member_);
-    const auto low_slot_index   = emit_constant(scalar_kind::uint32, slot);
-    const auto high_slot_index  = emit_constant(scalar_kind::uint32, slot + 1U);
-    const auto shift            = emit_constant(scalar_kind::uint32, 32U);
-    const auto low_slot_address = push(
-      operation::argument_address,
-      scalar_kind::uint32,
-      member,
-      low_slot_index,
-      0U);
-    const auto low_half = push(
-      operation::argument_load, scalar_kind::uint32, low_slot_address, 0U, 0U);
-    const auto high_slot_address = push(
-      operation::argument_address,
-      scalar_kind::uint32,
-      member,
-      high_slot_index,
-      0U);
-    const auto high_half = push(
-      operation::argument_load, scalar_kind::uint32, high_slot_address, 0U, 0U);
-    next_id_ += 5U;
-    const auto result =
-      push(operation::uniform_load, kind, low_half, high_half, shift);
-    return result;
+    const auto member  = emit_constant(scalar_kind::uint32, port_member);
+    next_id_          += 2U;
+    return push(operation::uniform_load, kind, member, 0U, 0U);
   }
 
   constexpr
