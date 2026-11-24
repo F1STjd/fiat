@@ -10,8 +10,8 @@
 ; Invariant (one reader per element): no invocation writes any input element; every
 ; cross-element value moves through workgroup memory or the context scratch, so the input is
 ; never aliased by an output and stays unchanged.
-; Push block (fiat stage protocol): input @0, scratch @8, count @16, first @20 (unused),
-; argument words @24; word 0 is the identity, the map and epilogue arguments follow.
+; Push block (fiat stage protocol): input @0, result @8, scratch @16, count @24, first @28 (unused),
+; argument words @32; word 0 is the identity, the map and epilogue arguments follow.
                OpCapability Shader
                OpCapability PhysicalStorageBufferAddresses
                OpCapability VulkanMemoryModel
@@ -39,14 +39,15 @@
                OpMemberDecorate %push_type 0 Offset 0
                OpMemberDecorate %push_type 1 Offset 8
                OpMemberDecorate %push_type 2 Offset 16
-               OpMemberDecorate %push_type 3 Offset 20
-               OpMemberDecorate %push_type 4 Offset 24
+               OpMemberDecorate %push_type 3 Offset 24
+               OpMemberDecorate %push_type 4 Offset 28
+               OpMemberDecorate %push_type 5 Offset 32
        %void = OpTypeVoid
        %bool = OpTypeBool
       %float = OpTypeFloat 32
         %int = OpTypeInt 32 1
        %uint = OpTypeInt 32 0
-%argument_count = OpConstant %uint 26
+%argument_count = OpConstant %uint 24
 %argument_array = OpTypeArray %uint %argument_count
      %uint_3 = OpTypeVector %uint 3
 %element_pointer = OpTypePointer PhysicalStorageBuffer %@ELEMENT@
@@ -55,7 +56,7 @@
 %scratch_pointer = OpTypePointer PhysicalStorageBuffer %scratch_type
 %scratch_uint_pointer = OpTypePointer PhysicalStorageBuffer %uint
 %scratch_element_pointer = OpTypePointer PhysicalStorageBuffer %@ELEMENT@
-  %push_type = OpTypeStruct %element_pointer %scratch_pointer %uint %uint %argument_array
+  %push_type = OpTypeStruct %element_pointer %element_pointer %scratch_pointer %uint %uint %argument_array
 %push_pointer = OpTypePointer PushConstant %push_type
 %push_uint_pointer = OpTypePointer PushConstant %uint
 %push_element_pointer = OpTypePointer PushConstant %element_pointer
@@ -68,7 +69,8 @@
        %zero = OpConstant %uint 0
         %one = OpConstant %uint 1
         %two = OpConstant %uint 2
-%argument_member_index = OpConstant %uint 4
+      %three = OpConstant %uint 3
+%argument_member_index = OpConstant %uint 5
      %device = OpConstant %uint 1
   %workgroup = OpConstant %uint 2
 ; 24840 = AcquireRelease | WorkgroupMemory | MakeAvailable | MakeVisible
@@ -147,10 +149,10 @@
      %groups = OpLoad %uint %groups_pointer
 %input_member = OpAccessChain %push_element_pointer %push %zero
       %input = OpLoad %element_pointer %input_member
-%scratch_member = OpAccessChain %push_scratch_pointer %push %one
+%scratch_member = OpAccessChain %push_scratch_pointer %push %two
     %scratch = OpLoad %scratch_pointer %scratch_member
 %counter_pointer = OpAccessChain %scratch_uint_pointer %scratch %zero
-%count_member = OpAccessChain %push_uint_pointer %push %two
+%count_member = OpAccessChain %push_uint_pointer %push %three
       %count = OpLoad %uint %count_member
 %identity_member = OpAccessChain %push_uint_pointer %push %argument_member_index %zero
 %identity_bits = OpLoad %uint %identity_member
@@ -216,7 +218,8 @@
                OpBranchConditional %is_first %write %write_done
       %write = OpLabel
 %final = OpFunctionCall %@ELEMENT@ %fiat_epilogue %total
-%result_pointer = OpAccessChain %scratch_element_pointer %scratch %one
+%result_member = OpAccessChain %push_element_pointer % push %one
+%result_pointer = OpLoad %element_pointer %result_member
                OpStore %result_pointer %final Aligned|NonPrivatePointer 4
                OpAtomicStore %counter_pointer %device %semantics_release %zero
                OpBranch %write_done

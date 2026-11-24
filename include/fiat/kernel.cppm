@@ -111,7 +111,10 @@ struct reduce_stage
   };
 
   template<std::same_as<Identity> Element>
-  using ports = std::tuple<port<Element, port_access::read>>;
+  using ports = std::tuple<
+    port<Element, port_access::read>,
+    port<Element, port_access::write, 1U>
+  >;
 
   using leading_arguments = std::tuple<Identity>;
 
@@ -852,12 +855,13 @@ operator |(
 
 static_assert(
   skeleton_push_of<reduce_stage<chain<>, plus, float>, float>.argument_offset() ==
-    24UZ,
-  "reduce arguments start after the input, the scratch, count and first");
+    32UZ,
+  "reduce arguments start after the input, the result, the scratch, count and "
+  "first");
 static_assert(
-  skeleton_push_of<reduce_stage<chain<>, plus, float>, float>.arguments ==
-    argument_capacity,
-  "reduce keeps 26 argument words; the identity takes the first");
+  skeleton_push_of<reduce_stage<chain<>, plus, float>, float>.arguments == 24UZ,
+  "reduce keeps 24 argument words after the result port; the identity takes "
+  "the first");
 static_assert(
   !archetype_stage<reduce_stage<chain<>, plus, std::uint32_t>, float>,
   "the reduce identity has the array's element type");

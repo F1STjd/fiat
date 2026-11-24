@@ -152,7 +152,8 @@ constexpr fiat::graph_buffer<float> float_join {
 constexpr auto graph_one = fiat::make_graph(
   fiat::make_node(
     fiat::transform(fiat::square {}), float_source, float_intermediate),
-  fiat::make_node(fiat::reduce(fiat::plus {}, 0.0F), float_intermediate));
+  fiat::make_node(
+    fiat::reduce(fiat::plus {}, 0.0F), float_intermediate, float_reduction));
 static_assert(graph_one.analysis.dispatch_count == 2UZ);
 static_assert(graph_one.analysis.barrier_count == 1UZ);
 static_assert(graph_one.analysis.requirements.scratch_bytes == 4'104UZ);
