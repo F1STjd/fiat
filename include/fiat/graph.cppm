@@ -8,6 +8,11 @@ import :stage;
 namespace fiat
 {
 
+inline
+void
+graph_error([[maybe_unused]] std::string_view reason)
+{}
+
 export enum class graph_buffer_region : std::uint8_t
 {
   external,
@@ -232,7 +237,6 @@ struct graph_analysis
   std::size_t                                        ping_pong_pass_count {};
   std::optional<graph_allocation>                    final_allocation {};
   bool                                               port_sizes_valid {};
-  bool                                               topological_order_valid {};
 };
 
 constexpr
@@ -255,15 +259,42 @@ analyze_dependencies(
   const std::array<std::size_t, NodeCount>& dispatch_counts,
   const std::array<graph_port, PortCount>&  ports)
 {
-  const auto node_ports = [ & ](std::size_t node) {
+  const auto node_ports =
+    [ & ](std::size_t node) -> std::span<const graph_port> {
     return std::span {ports}.subspan(first_ports[ node ], port_counts[ node ]);
   };
 
   constexpr auto node_indices = std::views::indices(NodeCount);
 
-  std::ranges::for_each(node_indices, [ & ](std::size_t source) -> void {
-    std::ranges::for_each(node_indices, [ & ](std::size_t target) -> void {
-      if (source == target) { return; }
+  for (const auto node : node_indices)
+  {
+    for (const auto& port : node_ports(node))
+    {
+      if (port.initially_available) { continue; }
+      const auto writes_buffer = [ & ](const graph_port& other) -> bool {
+        return other.identity == port.identity && writes(other.access);
+      };
+      if (writes(port.access) && std::ranges::count_if(ports, writes_buffer) > 1)
+      {
+        graph_error("graph buffer has more than one writer");
+      }
+      if (
+        reads(port.access) &&
+        std::ranges::none_of(node_indices, [ & ](std::size_t producer) -> bool {
+          return producer != node &&
+                 std::ranges::any_of(node_ports(producer), writes_buffer);
+        }))
+      {
+        graph_error("graph reads a buffer that no other node writes");
+      }
+    }
+  }
+
+  for (const auto source : node_indices)
+  {
+    for (const auto target : node_indices)
+    {
+      if (source == target) { continue; }
       result.edges[ source ][ target ] = std::ranges::any_of(
         node_ports(source), [ & ](const graph_port& first) -> bool {
           return std::ranges::any_of(
@@ -275,8 +306,7 @@ analyze_dependencies(
                    reads(second.access)) ||
                   (first.initially_available &&
                     source < target &&
-                    ((writes(first.access) && reads(second.access)) ||
-                      (reads(first.access) && writes(second.access)))));
+                    (writes(first.access) || writes(second.access))));
               const bool physical_write_after_read =
                 source < target &&
                 first.identity != second.identity &&
@@ -287,11 +317,12 @@ analyze_dependencies(
               return logical_dependency || physical_write_after_read;
             });
         });
-    });
-  });
+    }
+  }
 
   std::array<bool, NodeCount> emitted {};
-  std::ranges::for_each(node_indices, [ & ](std::size_t position) -> void {
+  for (const auto position : node_indices)
+  {
     const auto found =
       std::ranges::find_if(node_indices, [ & ](std::size_t candidate) -> bool {
         return !emitted[ candidate ] &&
@@ -301,22 +332,26 @@ analyze_dependencies(
                           emitted[ predecessor ];
                  });
       });
+    if (found == node_indices.end())
+    {
+      graph_error("graph contains a dependency cycle");
+    }
     result.topological_order[ position ] = *found;
     emitted[ *found ]                    = true;
-  });
+  }
 
-  std::ranges::for_each(
-    result.topological_order, [ & ](std::size_t node) -> void {
-      std::ranges::for_each(
-        node_indices, [ & ](std::size_t predecessor) -> void {
-          if (result.edges[ predecessor ][ node ])
-          {
-            result.barrier_levels[ node ] = std::max(
-              result.barrier_levels[ node ],
-              result.barrier_levels[ predecessor ] + 1UZ);
-          }
-        });
-    });
+  for (const auto node : result.topological_order)
+  {
+    for (const auto predecessor : node_indices)
+    {
+      if (result.edges[ predecessor ][ node ])
+      {
+        result.barrier_levels[ node ] = std::max(
+          result.barrier_levels[ node ],
+          result.barrier_levels[ predecessor ] + 1UZ);
+      }
+    }
+  }
   result.stage_barrier_count = std::ranges::max(result.barrier_levels);
   result.dispatch_count =
     std::ranges::fold_left(dispatch_counts, 0UZ, std::plus {});
@@ -328,14 +363,6 @@ analyze_dependencies(
         return count + dispatches - 1UZ;
       }) +
     result.stage_barrier_count;
-  result.topological_order_valid =
-    std::ranges::all_of(node_indices, [ & ](std::size_t earlier) -> bool {
-      return std::ranges::all_of(node_indices, [ & ](std::size_t later) -> bool {
-        return !result.edges[ earlier ][ later ] ||
-               std::ranges::find(result.topological_order, earlier) <
-                 std::ranges::find(result.topological_order, later);
-      });
-    });
 }
 
 template<class... Nodes>
