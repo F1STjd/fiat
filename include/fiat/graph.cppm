@@ -34,18 +34,16 @@ struct graph_buffer
 };
 
 template<std::size_t Capacity>
-struct graph_message
+class graph_message
 {
-  std::array<char, Capacity> characters {};
-  std::size_t                length {};
-
+public:
   constexpr
   void
   append(std::string_view text)
   {
-    const auto copied = text.substr(0UZ, Capacity - length);
-    std::ranges::copy(copied, characters.begin() + length);
-    length += copied.size();
+    const auto copied = text.substr(0UZ, Capacity - size_);
+    std::ranges::copy(copied, characters_.begin() + size_);
+    size_ += copied.size();
   }
 
   constexpr
@@ -64,12 +62,16 @@ struct graph_message
   constexpr
   auto
   data() const -> const char*
-  { return characters.data(); }
+  { return characters_.data(); }
 
   constexpr
   auto
   size() const -> std::size_t
-  { return length; }
+  { return size_; }
+
+private:
+  std::array<char, Capacity> characters_ {};
+  std::size_t                size_ {};
 };
 
 template<scalar Element>
