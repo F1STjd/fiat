@@ -466,33 +466,72 @@ analyze(const std::tuple<Nodes...>& all_nodes)
   const auto exchange = std::ranges::find_if(ports, [](const graph_port& port) {
     return port.region == graph_buffer_region::ping_pong;
   });
-  if (exchange != ports.end())
+  if (exchange == ports.end()) { return result; }
+
+  const bool one_exchange =
+    std::ranges::all_of(ports, [ & ](const graph_port& port) -> bool {
+      return port.region != graph_buffer_region::ping_pong ||
+             port.allocation_identity == exchange->allocation_identity;
+    });
+  if (!one_exchange)
   {
-    const auto source =
-      std::ranges::find_if(ports, [ & ](const graph_port& port) -> bool {
-        return port.initially_available &&
-               port.region == graph_buffer_region::external &&
-               port.bytes == exchange->bytes;
-      });
-    if (source != ports.end())
-    {
-      result.ping_pong_pass_count = static_cast<
-        std::size_t
-      >(std::ranges::count_if(ports, [ & ](const graph_port& port) -> bool {
-        return writes(port.access) &&
-               ((port.region == graph_buffer_region::external &&
-                  port.allocation_identity == source->allocation_identity) ||
-                 (port.region == graph_buffer_region::ping_pong &&
-                   port.allocation_identity == exchange->allocation_identity));
-      }));
-      const graph_port& final_port =
-        result.ping_pong_pass_count % 2UZ == 0UZ ? *source : *exchange;
-      result.final_allocation = graph_allocation {
-        .identity = final_port.allocation_identity,
-        .region   = final_port.region,
-      };
-    }
+    graph_error("graph uses more than one ping-pong allocation");
   }
+  const auto node_ports = [ & ](std::size_t node) {
+    return std::span<const graph_port> {ports}.subspan(
+      first_ports[ node ], port_counts[ node ]);
+  };
+  const auto is_source = [ & ](const graph_port& port) -> bool {
+    return port.initially_available &&
+           port.region == graph_buffer_region::external &&
+           reads(port.access) &&
+           port.bytes == exchange->bytes;
+  };
+  const auto writer = std::ranges::find_if(
+    result.topological_order, [ & ](std::size_t node) -> bool {
+      return std::ranges::any_of(
+        node_ports(node), [](const graph_port& port) -> bool {
+          return port.region == graph_buffer_region::ping_pong &&
+                 writes(port.access);
+        });
+    });
+  std::span<const graph_port> candidates {ports};
+  if (
+    writer != result.topological_order.end() &&
+    std::ranges::any_of(node_ports(*writer), is_source))
+  {
+    candidates = node_ports(*writer);
+  }
+
+  const auto source = std::ranges::find_if(candidates, is_source);
+  if (source == candidates.end())
+  {
+    graph_error("graph ping-pong has no initially available source");
+  }
+
+  const bool one_source =
+    std::ranges::all_of(candidates, [ & ](const graph_port& port) -> bool {
+      return !is_source(port) ||
+             port.allocation_identity == source->allocation_identity;
+    });
+  if (!one_source) { graph_error("graph ping-pong source is ambiguous"); }
+
+  result.ping_pong_pass_count = static_cast<
+    std::size_t
+  >(std::ranges::count_if(ports, [ & ](const graph_port& port) -> bool {
+    return writes(port.access) &&
+           ((port.region == graph_buffer_region::external &&
+              port.allocation_identity == source->allocation_identity) ||
+             (port.region == graph_buffer_region::ping_pong &&
+               port.allocation_identity == exchange->allocation_identity));
+  }));
+  const graph_port& final_port =
+    result.ping_pong_pass_count % 2UZ == 0UZ ? *source : *exchange;
+  result.final_allocation = graph_allocation {
+    .identity = final_port.allocation_identity,
+    .region   = final_port.region,
+  };
+
   return result;
 }
 
