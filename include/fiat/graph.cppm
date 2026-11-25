@@ -370,6 +370,7 @@ template<class... Nodes>
 consteval
 auto
 analyze(const std::tuple<Nodes...>& all_nodes)
+  -> graph_analysis<sizeof...(Nodes), (Nodes::port_count + ...)>
 {
   constexpr std::size_t                  node_count {sizeof...(Nodes)};
   constexpr std::size_t                  port_count {(Nodes::port_count + ...)};
