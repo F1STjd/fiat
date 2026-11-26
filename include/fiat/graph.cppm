@@ -219,6 +219,10 @@ export struct graph_workspace_offsets
   std::size_t table {};
   std::size_t ping_pong {};
   std::size_t scratch {};
+
+  constexpr
+  auto
+  operator ==(const graph_workspace_offsets&) const -> bool = default;
 };
 
 export struct graph_allocation
@@ -245,6 +249,12 @@ struct graph_analysis
   std::size_t                                        barrier_count {};
   std::size_t                                        ping_pong_pass_count {};
   std::optional<graph_allocation>                    final_allocation {};
+  std::size_t                                        pass_count {1UZ};
+  std::size_t pass_node_count {NodeCount};
+
+  constexpr
+  auto
+  operator ==(const graph_analysis&) const -> bool = default;
 };
 
 constexpr

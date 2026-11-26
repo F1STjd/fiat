@@ -106,6 +106,10 @@ export struct workspace_sizes
            std::size_t {ping_pong_bytes != 0UZ} +
            std::size_t {scratch_bytes != 0UZ};
   }
+
+  constexpr
+  auto
+  operator ==(const workspace_sizes&) const -> bool = default;
 };
 
 export inline constexpr std::uint32_t push_budget {256U};
