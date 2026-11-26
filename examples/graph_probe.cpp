@@ -251,13 +251,6 @@ radix_pass(auto input, auto output)
     .region              = fiat::graph_buffer_region::table,
     .initially_available = false,
   };
-  constexpr fiat::graph_buffer<std::uint32_t> companion {
-    .identity            = 32UZ + 3UZ * Pass,
-    .allocation_identity = 4UZ,
-    .bytes               = Pass == 0UZ ? element_bytes / 2UZ : element_bytes,
-    .region              = fiat::graph_buffer_region::scratch,
-    .initially_available = false,
-  };
   return std::tuple {
     fiat::make_node(
       fiat::tile_histogram<256U>(fiat::digit<8U> {}, 0U), input, histogram),
@@ -266,9 +259,9 @@ radix_pass(auto input, auto output)
       fiat::stable_scatter<256U>(fiat::digit<8U> {}, 0U),
       input,
       output,
-      histogram,
       offsets,
-      companion),
+      fiat::unbound_buffer<std::uint32_t>,
+      fiat::unbound_buffer<std::uint32_t>),
   };
 }
 
@@ -292,8 +285,7 @@ static_assert(
 static_assert(
   graph_four.analysis.requirements.ping_pong_bytes == element_bytes);
 static_assert(graph_four.analysis.buffer_offsets[ 8UZ ] == 0UZ);
-static_assert(
-  graph_four.analysis.workspace_offsets[ 1UZ ].scratch == element_bytes);
+static_assert(graph_four.analysis.workspace_offsets[ 1UZ ].scratch == 0UZ);
 
   #if 0
 constexpr auto graph_five = fiat::make_node(

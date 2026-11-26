@@ -19,6 +19,7 @@ export enum class graph_buffer_region : std::uint8_t
   table,
   ping_pong,
   scratch,
+  unbound,
 };
 
 export template<scalar Element>
@@ -31,6 +32,12 @@ struct graph_buffer
   std::size_t         bytes {};
   graph_buffer_region region {graph_buffer_region::external};
   bool                initially_available {true};
+};
+
+export template<scalar Element>
+inline constexpr graph_buffer<Element> unbound_buffer {
+  .region              = graph_buffer_region::unbound,
+  .initially_available = false,
 };
 
 template<std::size_t Capacity>
@@ -250,6 +257,11 @@ auto
 writes(port_access access) -> bool
 { return access != port_access::read; }
 
+constexpr
+auto
+bound(const graph_port& port) -> bool
+{ return port.region != graph_buffer_region::unbound; }
+
 template<std::size_t NodeCount, std::size_t PortCount>
 consteval
 void
@@ -271,9 +283,11 @@ analyze_dependencies(
   {
     for (const auto& port : node_ports(node))
     {
-      if (port.initially_available) { continue; }
+      if (bound(port) || port.initially_available) { continue; }
       const auto writes_buffer = [ & ](const graph_port& other) -> bool {
-        return other.identity == port.identity && writes(other.access);
+        return bound(other) &&
+               other.identity == port.identity &&
+               writes(other.access);
       };
       if (writes(port.access) && std::ranges::count_if(ports, writes_buffer) > 1)
       {
@@ -298,8 +312,10 @@ analyze_dependencies(
       if (source == target) { continue; }
       result.edges[ source ][ target ] = std::ranges::any_of(
         node_ports(source), [ & ](const graph_port& first) -> bool {
+          if (!bound(first)) { return false; }
           return std::ranges::any_of(
             node_ports(target), [ & ](const graph_port& second) -> bool {
+              if (!bound(second)) { return false; }
               const bool logical_dependency =
                 first.identity == second.identity &&
                 ((!first.initially_available &&
@@ -400,14 +416,17 @@ analyze(const std::tuple<Nodes...>& all_nodes)
   std::array<std::size_t, 3UZ> explicit_bytes {};
   for (const auto position : std::views::indices(port_count))
   {
-    const auto& port        = ports[ position ];
-    const auto  prior_ports = std::span {ports}.first(position);
+    const auto& port = ports[ position ];
+    if (!bound(port)) { continue; }
+    const auto prior_ports = std::span {ports}.first(position);
     if (port.size != 0U && port.bytes != port.size * port.element_bytes)
     {
       graph_error("graph port bytes differ from its fixed stage size");
     }
     if (std::ranges::any_of(prior_ports, [ & ](graph_port prior) -> bool {
-          return prior.identity == port.identity && prior.bytes != port.bytes;
+          return bound(prior) &&
+                 prior.identity == port.identity &&
+                 prior.bytes != port.bytes;
         }))
     {
       graph_error("graph ports of one logical buffer differ in bytes");
@@ -418,7 +437,8 @@ analyze(const std::tuple<Nodes...>& all_nodes)
     }
     const auto found =
       std::ranges::find_if(prior_ports, [ & ](graph_port prior) -> bool {
-        return prior.allocation_identity == port.allocation_identity &&
+        return bound(prior) &&
+               prior.allocation_identity == port.allocation_identity &&
                prior.region == port.region;
       });
     if (found != prior_ports.end())
@@ -432,7 +452,8 @@ analyze(const std::tuple<Nodes...>& all_nodes)
       const auto region = std::to_underlying(port.region) - 1UZ;
       auto       matching_ports =
         ports | std::views::filter([ & ](const graph_port& candidate) -> bool {
-          return candidate.allocation_identity == port.allocation_identity &&
+          return bound(candidate) &&
+                 candidate.allocation_identity == port.allocation_identity &&
                  candidate.region == port.region;
         });
       const auto allocation_bytes = std::ranges::max(
