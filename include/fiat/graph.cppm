@@ -442,8 +442,7 @@ analyze(const std::tuple<Nodes...>& all_nodes)
     }
   }
 
-  std::vector<std::array<std::size_t, 3UZ>> level_bytes(
-    result.stage_barrier_count + 1UZ, std::array<std::size_t, 3UZ> {});
+  std::array<std::array<std::size_t, 3UZ>, node_count> level_bytes {};
   for (const auto node : result.topological_order)
   {
     const auto level                 = result.barrier_levels[ node ];
