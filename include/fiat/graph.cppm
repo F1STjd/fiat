@@ -429,16 +429,24 @@ analyze(const std::tuple<Nodes...>& all_nodes)
     }
     else if (port.region != graph_buffer_region::external)
     {
-      const auto region           = std::to_underlying(port.region) - 1UZ;
-      const auto allocation_bytes = std::ranges::max(
-        ports |
-        std::views::filter([ & ](const graph_port& candidate) -> bool {
+      const auto region = std::to_underlying(port.region) - 1UZ;
+      auto       matching_ports =
+        ports | std::views::filter([ & ](const graph_port& candidate) -> bool {
           return candidate.allocation_identity == port.allocation_identity &&
                  candidate.region == port.region;
-        }) |
-        std::views::transform(&graph_port::bytes));
-      result.buffer_offsets[ position ]  = explicit_bytes[ region ];
-      explicit_bytes[ region ]          += allocation_bytes;
+        });
+      const auto allocation_bytes = std::ranges::max(
+        matching_ports | std::views::transform(&graph_port::bytes));
+      const auto alignment = std::max(
+        1UZ,
+        std::ranges::max(
+          matching_ports | std::views::transform(&graph_port::element_bytes)));
+      const auto padded =
+        std::saturating_add(explicit_bytes[ region ], alignment - 1UZ);
+      const auto aligned_offset         = padded - padded % alignment;
+      result.buffer_offsets[ position ] = aligned_offset;
+      explicit_bytes[ region ] =
+        std::saturating_add(aligned_offset, allocation_bytes);
     }
   }
 
