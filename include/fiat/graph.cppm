@@ -738,7 +738,7 @@ collect_pass_ports(const std::array<std::tuple<PassNodes...>, Count>& passes)
   {
     std::apply(
       [ & ](const PassNodes&... node) -> void {
-        ((std::ranges::copy(node.boun_ports, ports.begin() + offset),
+        ((std::ranges::copy(node.bound_ports, ports.begin() + offset),
            offset += PassNodes::port_count),
           ...);
       },
@@ -838,6 +838,207 @@ validate_repeat_psses(
   }
 }
 
+template<std::size_t Count, class... PassNodes>
+  requires (Count > 6UZ)
+consteval
+auto
+analyze_repeated(const std::array<std::tuple<PassNodes...>, Count>& passes)
+  -> graph_analysis<
+    Count * sizeof...(PassNodes),
+    Count*(PassNodes::port_count + ...)
+  >
+{
+  constexpr std::size_t window_pass_count {6UZ};
+  constexpr std::size_t pass_node_count {sizeof...(PassNodes)};
+  constexpr std::size_t pass_port_count {(PassNodes::port_count + ...)};
+  constexpr std::size_t pass_dispatch_count {(
+    PassNodes::stage_type::dispatches.size() + ...)};
+  constexpr std::size_t pass_intra_barrier_count {(
+    (PassNodes::stage_type::dispatches.size() - 1UZ) + ...)};
+
+  const std::array<std::tuple<PassNodes...>, window_pass_count> window_passes {
+    passes[ 0UZ ],
+    passes[ 1UZ ],
+    passes[ 2UZ ],
+    passes[ 3UZ ],
+    passes[ 4UZ ],
+    passes[ 5UZ ],
+  };
+  const auto window = analyze(flatten_passes(window_passes));
+
+  for (const auto source_pass : std::views::indices(window_pass_count))
+  {
+    for (const auto target_pass : std::views::indices(source_pass))
+    {
+      for (const auto source_local : std::views::indices(pass_node_count))
+      {
+        for (const auto target_local : std::views::indices(pass_node_count))
+        {
+          if (
+            window.edges
+              [ source_pass * pass_node_count + source_local ]
+              [ target_pass * pass_node_count + target_local ])
+          {
+            graph_error("graph repeat pass depends on a later pass");
+          }
+        }
+      }
+    }
+  }
+
+  const std::size_t level_delta =
+    window.barrier_levels[ pass_node_count ] - window.barrier_levels[ 0UZ ];
+  for (const auto pass : std::views::iota(1UZ, window_pass_count))
+  {
+    std::size_t previous_maximum {};
+    std::size_t current_minimum {std::numeric_limits<std::size_t>::max()};
+    for (const auto local : std::views::indices(pass_node_count))
+    {
+      const std::size_t previous_level =
+        window.barrier_levels[ (pass - 1UZ) * pass_node_count + local ];
+      const std::size_t current_level =
+        window.barrier_levels[ pass * pass_node_count + local ];
+      previous_maximum = std::max(previous_maximum, previous_level);
+      current_minimum  = std::min(current_minimum, current_level);
+      if (
+        current_level <= previous_level ||
+        current_level - previous_level != level_delta)
+      {
+        graph_error("graph repeat passes overlap in barrier levels");
+      }
+    }
+    if (current_minimum <= previous_maximum)
+    {
+      graph_error("graph repeat passes overlap in barrier levels");
+    }
+  }
+
+  graph_analysis<Count * pass_node_count, Count * pass_port_count> result {};
+  result.pass_count      = Count;
+  result.pass_node_count = pass_node_count;
+  for (const auto source_pass : std::views::indices(Count))
+  {
+    const std::size_t class_source =
+      source_pass == 0UZ ? 0UZ : (source_pass % 2UZ == 1UZ ? 1UZ : 2UZ);
+    for (const auto target_pass : std::views::iota(source_pass, Count))
+    {
+      const std::size_t distance = target_pass - source_pass;
+      const std::size_t class_target =
+        distance == 0UZ
+          ? class_source
+          : (distance == 1UZ
+                ? class_source + 1UZ
+                : class_source + (distance % 2UZ == 0UZ ? 2UZ : 3UZ));
+      for (const auto source_local : std::views::indices(pass_node_count))
+      {
+        for (const auto target_local : std::views::indices(pass_node_count))
+        {
+          result.edges
+            [ source_pass * pass_node_count + source_local ]
+            [ target_pass * pass_node_count + target_local ] =
+            window.edges
+              [ class_source * pass_node_count + source_local ]
+              [ class_target * pass_node_count + target_local ];
+        }
+      }
+    }
+  }
+
+  std::array<std::array<std::size_t, pass_node_count>, 3UZ> class_orders {};
+  for (const auto class_pass : std::views::indices(3UZ))
+  {
+    std::size_t count {};
+    for (const auto node : window.topological_order)
+    {
+      if (node / pass_node_count == class_pass)
+      {
+        class_orders[ class_pass ][ count++ ] = node % pass_node_count;
+      }
+    }
+  }
+
+  for (const auto pass : std::views::indices(Count))
+  {
+    const std::size_t class_pass =
+      pass == 0UZ ? 0UZ : (pass % 2UZ == 1UZ ? 1UZ : 2UZ);
+    for (const auto local_position : std::views::indices(pass_node_count))
+    {
+      result.topological_order[ pass * pass_node_count + local_position ] =
+        pass * pass_node_count + class_orders[ class_pass ][ local_position ];
+    }
+    for (const auto local : std::views::indices(pass_node_count))
+    {
+      result.barrier_levels[ pass * pass_node_count + local ] =
+        window.barrier_levels[ class_pass * pass_node_count + local ] +
+        (pass - class_pass) * level_delta;
+      result.workspace_offsets[ pass * pass_node_count + local ] =
+        window.workspace_offsets[ class_pass * pass_node_count + local ];
+    }
+    for (const auto port_index : std::views::indices(pass_port_count))
+    {
+      result.buffer_offsets[ pass * pass_port_count + port_index ] =
+        window.buffer_offsets[ class_pass * pass_port_count + port_index ];
+    }
+  }
+
+  result.requirements        = window.requirements;
+  result.stage_barrier_count = std::ranges::max(result.barrier_levels);
+  result.dispatch_count      = Count * pass_dispatch_count;
+  result.barrier_count =
+    Count * pass_intra_barrier_count + result.stage_barrier_count;
+
+  const auto            window_ports = collect_pass_ports(window_passes);
+  constexpr std::size_t window_node_count {window_pass_count * pass_node_count};
+  constexpr std::array<std::size_t, pass_node_count> pass_port_counts {
+    PassNodes::port_count...,
+  };
+  std::array<std::size_t, window_node_count> window_first_ports {};
+  std::array<std::size_t, window_node_count> window_port_counts {};
+  std::size_t                                window_port_position {};
+  for (const auto node : std::views::indices(window_node_count))
+  {
+    window_first_ports[ node ]  = window_port_position;
+    window_port_counts[ node ]  = pass_port_counts[ node % pass_node_count ];
+    window_port_position       += window_port_counts[ node ];
+  }
+
+  const auto lanes = pair_ping_pong_lanes(
+    window_ports,
+    window.topological_order,
+    window_first_ports,
+    window_port_counts);
+  if (lanes.count == 0UZ) { return result; }
+
+  const auto lane_writes = [ & ](const ping_pong_lane& lane) -> std::size_t {
+    const auto pass_writes = [ & ](std::size_t pass) -> std::size_t {
+      const auto span = std::span {window_ports}.subspan(
+        pass * pass_port_count, pass_port_count);
+      return static_cast<
+        std::size_t
+      >(std::ranges::count_if(span, [ & ](const graph_port& port) -> bool {
+        return writes(port.access) && in_lane(lane, port);
+      }));
+    };
+    return ((Count + 1UZ) / 2UZ) * pass_writes(0UZ) +
+           (Count / 2UZ) * pass_writes(1UZ);
+  };
+  const auto& first_lane      = lanes.lanes[ 0UZ ];
+  result.ping_pong_pass_count = lane_writes(first_lane);
+  const bool ends_on_source   = result.ping_pong_pass_count % 2UZ == 0UZ;
+  result.final_allocation =
+    ends_on_source ? first_lane.source : first_lane.exchange;
+
+  for (
+    const auto& lane : std::span {lanes.lanes}.subspan(1UZ, lanes.count - 1UZ))
+  {
+    if ((lane_writes(lane) % 2UZ) != ends_on_source)
+    {
+      graph_error("graph ping-pong lanes end on differnet sides");
+    }
+  }
+  return result;
+}
+
 export
 template<std::size_t Count, class PassBuilder>
   requires (Count >= 1UZ && Count <= std::numeric_limits<std::uint32_t>::max())
@@ -860,14 +1061,24 @@ repeat(PassBuilder build_pass)
   validate_repeat_psses<Count, std::tuple_size_v<decltype(all_ports)> / Count>(
     all_ports);
 
-  auto all_nodes           = flatten_passes(passes);
-  auto analysis            = analyze(all_nodes);
-  analysis.pass_count      = Count;
-  analysis.pass_node_count = std::tuple_size_v<pass_tuple>;
-  return graph {
-    .nodes    = std::move(all_nodes),
-    .analysis = std::move(analysis),
-  };
+  auto all_nodes = flatten_passes(passes);
+  if constexpr (Count <= 6UZ)
+  {
+    auto analysis            = analyze(all_nodes);
+    analysis.pass_count      = Count;
+    analysis.pass_node_count = std::tuple_size_v<pass_tuple>;
+    return graph {
+      .nodes    = std::move(all_nodes),
+      .analysis = std::move(analysis),
+    };
+  }
+  else
+  {
+    return graph {
+      .nodes    = std::move(all_nodes),
+      .analysis = analyze_repeated(passes),
+    };
+  }
 }
 
 } // namespace fiat
