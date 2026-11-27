@@ -287,6 +287,158 @@ static_assert(
 static_assert(graph_four.analysis.buffer_offsets[ 8UZ ] == 0UZ);
 static_assert(graph_four.analysis.workspace_offsets[ 1UZ ].scratch == 0UZ);
 
+constexpr std::size_t radix_element_count {262'161UZ};
+constexpr std::size_t radix_element_bytes {
+  radix_element_count * sizeof(std::uint32_t),
+};
+constexpr auto radix_key_pass = [](std::uint32_t pass) -> auto {
+  const std::size_t   stride {3UZ};
+  const std::size_t   pass_index {pass};
+  const std::uint32_t shift {pass * 8U};
+  const bool          even_pass {pass % 2U == 0};
+  const fiat::graph_buffer<std::uint32_t> keys_in
+  {
+    .identity            = stride * pass_index,
+    .allocation_identity = even_pass ? 0UZ : 1UZ, .bytes = radix_element_bytes,
+    .region =
+      even_pass
+        ? fiat::graph_buffer_region::external
+        : fiat::graph_buffer_region::ping_pong,
+    .initially_available = pass == 0U,
+  };
+  const fiat::graph_buffer<std::uint32_t> histogram {
+    .identity            = stride * pass_index + 1UZ,
+    .allocation_identity = 2UZ,
+    .bytes               = 256UZ * sizeof(std::uint32_t),
+    .region              = fiat::graph_buffer_region::table,
+    .initially_available = false,
+  };
+  const fiat::graph_buffer<std::uint32_t> offsets {
+    .identity            = stride * pass_index + 2UZ,
+    .allocation_identity = 3UZ,
+    .bytes               = 256UZ * sizeof(std::uint32_t),
+    .region              = fiat::graph_buffer_region::table,
+    .initially_available = false,
+  };
+  const fiat::graph_buffer<std::uint32_t> keys_out {
+    .identity            = stride * (pass_index + 1UZ),
+    .allocation_identity = even_pass ? 1UZ : 0UZ,
+    .bytes               = radix_element_bytes,
+    .region =
+      even_pass
+        ? fiat::graph_buffer_region::ping_pong
+        : fiat::graph_buffer_region::external,
+    .initially_available = false,
+  };
+  return std::tuple {
+    fiat::make_node(
+      fiat::tile_histogram<256U>(fiat::digit<8U> {}, shift), keys_in, histogram),
+    fiat::make_node(fiat::exclusive_scan(fiat::plus {}, 0U), histogram, offsets),
+    fiat::make_node(
+      fiat::stable_scatter<256U>(fiat::digit<8U> {}, shift),
+      keys_in,
+      keys_out,
+      offsets,
+      fiat::unbound_buffer<std::uint32_t>,
+      fiat::unbound_buffer<std::uint32_t>),
+  };
+};
+
+constexpr auto graph_five_radix = fiat::repeat<4UZ>(radix_key_pass);
+static_assert(graph_five_radix.analysis.dispatch_count == 16UZ);
+static_assert(graph_five_radix.analysis.barrier_count == 15UZ);
+static_assert(graph_five_radix.analysis.ping_pong_pass_count == 4UZ);
+static_assert(
+  graph_five_radix.analysis.final_allocation ==
+  fiat::graph_allocation {
+    .identity = 0UZ,
+    .region   = fiat::graph_buffer_region::external,
+  });
+static_assert(
+  graph_five_radix.analysis.requirements.ping_pong_bytes == 1'048'644UZ);
+
+constexpr auto radix_companion_pass = [](std::uint32_t pass) -> auto {
+  const std::size_t                       stride {4UZ};
+  const std::size_t                       pass_index {pass};
+  const std::uint32_t                     shift {pass * 8U};
+  const bool                              even_pass {pass % 2U == 0U};
+  const fiat::graph_buffer<std::uint32_t> keys_in {
+    .identity            = stride * pass_index,
+    .allocation_identity = even_pass ? 0UZ : 1UZ,
+    .bytes               = radix_element_bytes,
+    .region =
+      even_pass
+        ? fiat::graph_buffer_region::external
+        : fiat::graph_buffer_region::ping_pong,
+    .initially_available = pass == 0U,
+  };
+  const fiat::graph_buffer<std::uint32_t> histogram {
+    .identity            = stride * pass_index + 1UZ,
+    .allocation_identity = 2UZ,
+    .bytes               = 256UZ * sizeof(std::uint32_t),
+    .region              = fiat::graph_buffer_region::table,
+    .initially_available = false,
+  };
+  const fiat::graph_buffer<std::uint32_t> offsets {
+    .identity            = stride * pass_index + 2UZ,
+    .allocation_identity = 3UZ,
+    .bytes               = 256UZ * sizeof(std::uint32_t),
+    .region              = fiat::graph_buffer_region::table,
+    .initially_available = false,
+  };
+  const fiat::graph_buffer<std::uint32_t> values_in {
+    .identity            = stride * pass_index + 3UZ,
+    .allocation_identity = even_pass ? 4UZ : 5UZ,
+    .bytes               = radix_element_bytes,
+    .region =
+      even_pass
+        ? fiat::graph_buffer_region::external
+        : fiat::graph_buffer_region::ping_pong,
+    .initially_available = pass == 0U,
+  };
+  const fiat::graph_buffer<std::uint32_t> keys_out {
+    .identity            = stride * (pass_index + 1UZ),
+    .allocation_identity = even_pass ? 1UZ : 0UZ,
+    .bytes               = radix_element_bytes,
+    .region =
+      even_pass
+        ? fiat::graph_buffer_region::ping_pong
+        : fiat::graph_buffer_region::external,
+    .initially_available = false,
+  };
+  const fiat::graph_buffer<std::uint32_t> values_out {
+    .identity            = stride * (pass_index + 1UZ) + 3UZ,
+    .allocation_identity = even_pass ? 5UZ : 4UZ,
+    .bytes               = radix_element_bytes,
+    .region =
+      even_pass
+        ? fiat::graph_buffer_region::ping_pong
+        : fiat::graph_buffer_region::external,
+    .initially_available = false,
+  };
+  return std::tuple {
+    fiat::make_node(
+      fiat::tile_histogram<256U>(fiat::digit<8U> {}, shift), keys_in, histogram),
+    fiat::make_node(fiat::exclusive_scan(fiat::plus {}, 0U), histogram, offsets),
+    fiat::make_node(
+      fiat::stable_scatter<256U, 1U>(fiat::digit<8U> {}, shift),
+      keys_in,
+      keys_out,
+      offsets,
+      values_in,
+      values_out),
+  };
+};
+
+constexpr auto graph_six = fiat::repeat<4UZ>(radix_companion_pass);
+static_assert(graph_six.analysis.requirements.ping_pong_bytes == 2'097'288UZ);
+static_assert(
+  graph_six.analysis.final_allocation ==
+  fiat::graph_allocation {
+    .identity = 0UZ,
+    .region   = fiat::graph_buffer_region::external,
+  });
+
   #if 0
 constexpr auto graph_five = fiat::make_node(
   fiat::reduce(fiat::plus {}, 0U), float_source);
