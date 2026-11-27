@@ -292,14 +292,14 @@ constexpr std::size_t radix_element_bytes {
   radix_element_count * sizeof(std::uint32_t),
 };
 constexpr auto radix_key_pass = [](std::uint32_t pass) -> auto {
-  const std::size_t   stride {3UZ};
-  const std::size_t   pass_index {pass};
-  const std::uint32_t shift {pass * 8U};
-  const bool          even_pass {pass % 2U == 0};
-  const fiat::graph_buffer<std::uint32_t> keys_in
-  {
+  const std::size_t                       stride {3UZ};
+  const std::size_t                       pass_index {pass};
+  const std::uint32_t                     shift {pass * 8U};
+  const bool                              even_pass {pass % 2U == 0};
+  const fiat::graph_buffer<std::uint32_t> keys_in {
     .identity            = stride * pass_index,
-    .allocation_identity = even_pass ? 0UZ : 1UZ, .bytes = radix_element_bytes,
+    .allocation_identity = even_pass ? 0UZ : 1UZ,
+    .bytes               = radix_element_bytes,
     .region =
       even_pass
         ? fiat::graph_buffer_region::external
@@ -434,6 +434,65 @@ constexpr auto graph_six = fiat::repeat<4UZ>(radix_companion_pass);
 static_assert(graph_six.analysis.requirements.ping_pong_bytes == 2'097'288UZ);
 static_assert(
   graph_six.analysis.final_allocation ==
+  fiat::graph_allocation {
+    .identity = 0UZ,
+    .region   = fiat::graph_buffer_region::external,
+  });
+
+constexpr auto graph_seven      = fiat::repeat<8UZ>(radix_key_pass);
+constexpr auto graph_seven_flat = []() consteval -> auto {
+  const auto flat_nodes =
+    []<std::size_t... Passes>(std::index_sequence<Passes...>) -> auto {
+    return std::tuple_cat(
+      radix_key_pass(static_cast<std::uint32_t>(Passes))...);
+  }(std::make_index_sequence<8UZ> {});
+  return std::apply(
+    [](auto... nodes) -> auto { return fiat::make_graph(nodes...); },
+    flat_nodes);
+}();
+constexpr auto graph_seven_normalised = []() consteval -> auto {
+  auto copy            = graph_seven.analysis;
+  copy.pass_count      = 1UZ;
+  copy.pass_node_count = 24UZ;
+  return copy;
+}();
+static_assert(graph_seven.analysis.pass_count == 8UZ);
+static_assert(graph_seven.analysis.pass_node_count == 3UZ);
+static_assert(graph_seven_normalised == graph_seven_flat.analysis);
+
+constexpr auto square_ping_pong_pass = [](std::uint32_t pass) -> auto {
+  const std::size_t               pass_index {pass};
+  const bool                      even_pass {pass % 2U == 0U};
+  const fiat::graph_buffer<float> input {
+    .identity            = pass_index,
+    .allocation_identity = even_pass ? 0UZ : 1UZ,
+    .bytes               = element_bytes,
+    .region =
+      even_pass
+        ? fiat::graph_buffer_region::external
+        : fiat::graph_buffer_region::ping_pong,
+    .initially_available = pass == 0U,
+  };
+  const fiat::graph_buffer<float> output {
+    .identity            = pass_index + 1UZ,
+    .allocation_identity = even_pass ? 1UZ : 0UZ,
+    .bytes               = element_bytes,
+    .region =
+      even_pass
+        ? fiat::graph_buffer_region::ping_pong
+        : fiat::graph_buffer_region::external,
+    .initially_available = false,
+  };
+  return std::tuple {
+    fiat::make_node(fiat::transform(fiat::square {}), input, output),
+  };
+};
+constexpr auto graph_eight = fiat::repeat<100UZ>(square_ping_pong_pass);
+static_assert(graph_eight.analysis.dispatch_count == 100UZ);
+static_assert(graph_eight.analysis.barrier_count == 99UZ);
+static_assert(graph_eight.analysis.ping_pong_pass_count == 100UZ);
+static_assert(
+  graph_eight.analysis.final_allocation ==
   fiat::graph_allocation {
     .identity = 0UZ,
     .region   = fiat::graph_buffer_region::external,
