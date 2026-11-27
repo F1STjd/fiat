@@ -695,4 +695,179 @@ make_graph(Nodes... nodes) -> graph<Nodes...>
   return {.nodes = all_nodes, .analysis = analyze(all_nodes)};
 }
 
+template<class Type>
+inline constexpr bool is_graph_node {false};
+
+template<class Stage, scalar Element>
+inline constexpr bool is_graph_node<graph_node<Stage, Element>> {true};
+
+template<class Type>
+inline constexpr bool is_pass_node_tuple {false};
+
+template<class... PassNodes>
+  requires (sizeof...(PassNodes) >= 1UZ && (is_graph_node<PassNodes> && ...))
+inline constexpr bool is_pass_node_tuple<std::tuple<PassNodes...>> {true};
+
+template<std::size_t Count, class... PassNodes>
+consteval
+auto
+flatten_passes(const std::array<std::tuple<PassNodes...>, Count>& passes)
+{
+  constexpr std::size_t pass_node_count {sizeof...(PassNodes)};
+  return
+    [ & ]<std::size_t... FlatIndices>(
+      std::index_sequence<FlatIndices...>) -> auto {
+      return std::tuple<std::tuple_element_t<
+        FlatIndices % pass_node_count,
+        std::tuple<PassNodes...>
+      >...> {std::get<FlatIndices % pass_node_count>(passes
+          [ FlatIndices / pass_node_count ])...};
+    }(std::make_index_sequence<Count * pass_node_count> {});
+}
+
+template<std::size_t Count, class... PassNodes>
+consteval
+auto
+collect_pass_ports(const std::array<std::tuple<PassNodes...>, Count>& passes)
+  -> std::array<graph_port, Count*(PassNodes::port_count + ...)>
+{
+  constexpr std::size_t pass_port_count {(PassNodes::port_count + ...)};
+  std::array<graph_port, Count * pass_port_count> ports {};
+  std::size_t                                     offset {};
+  for (const auto pass : std::views::indices(Count))
+  {
+    std::apply(
+      [ & ](const PassNodes&... node) -> void {
+        ((std::ranges::copy(node.boun_ports, ports.begin() + offset),
+           offset += PassNodes::port_count),
+          ...);
+      },
+      passes[ pass ]);
+  }
+  return ports;
+}
+
+template<std::size_t Count, std::size_t PassPortCount>
+consteval
+void
+validate_repeat_psses(
+  const std::array<graph_port, Count * PassPortCount>& ports)
+{
+  if constexpr (Count <= 1UZ) { return; }
+
+  const auto pass_port =
+    [ & ](std::size_t pass, std::size_t port_index) -> const graph_port& {
+    return ports[ pass * PassPortCount + port_index ];
+  };
+
+  bool        has_stride {false};
+  std::size_t stride {};
+  for (const auto port_index : std::views::indices(PassPortCount))
+  {
+    const auto& first  = pass_port(0UZ, port_index);
+    const auto& second = pass_port(1UZ, port_index);
+    if (bound(first) != bound(second))
+    {
+      graph_error("graph repeat passes do not repeat with period two");
+    }
+    if (bound(first))
+    {
+      if (second.identity <= first.identity)
+      {
+        graph_error("graph repeat passes use different identity strides");
+      }
+      stride     = second.identity - first.identity;
+      has_stride = true;
+      break;
+    }
+  }
+
+  if (has_stride)
+  {
+    std::size_t lowest {std::numeric_limits<std::size_t>::max()};
+    std::size_t highest {};
+    for (const auto port_index : std::views::indices(PassPortCount))
+    {
+      const auto& port = pass_port(0UZ, port_index);
+      if (!bound(port)) { continue; }
+      lowest  = std::min(lowest, port.identity);
+      highest = std::max(highest, port.identity);
+    }
+    if (highest - lowest >= std::saturating_mul(2UZ, stride))
+    {
+      graph_error("graph repeat pass identities reach beyond the next pass");
+    }
+  }
+
+  for (const auto pass : std::views::iota(1UZ, Count))
+  {
+    for (const auto port_index : std::views::indices(PassPortCount))
+    {
+      const auto& previous = pass_port(pass - 1UZ, port_index);
+      const auto& current  = pass_port(pass, port_index);
+      if (bound(previous) != bound(current))
+      {
+        graph_error("graph repeat passes do not repeat with period two");
+      }
+      if (
+        has_stride &&
+        bound(current) &&
+        (current.identity <= previous.identity ||
+          current.identity - previous.identity != stride))
+      {
+        graph_error("graph repeat passes use different identity strides");
+      }
+      if (pass >= 2UZ)
+      {
+        const auto& prior_two = pass_port(pass - 2UZ, port_index);
+        const bool  same_period_two =
+          current.allocation_identity == prior_two.allocation_identity &&
+          current.region == prior_two.region &&
+          current.bytes == prior_two.bytes &&
+          current.access == prior_two.access &&
+          current.element_bytes == prior_two.element_bytes &&
+          current.size == prior_two.size &&
+          (pass == 2UZ ||
+            current.initially_available == prior_two.initially_available);
+        if (!same_period_two)
+        {
+          graph_error("graph repeat passes do not repeat with period two");
+        }
+      }
+    }
+  }
+}
+
+export
+template<std::size_t Count, class PassBuilder>
+  requires (Count >= 1UZ && Count <= std::numeric_limits<std::uint32_t>::max())
+consteval auto
+repeat(PassBuilder build_pass)
+{
+  using pass_tuple = std::remove_cvref_t<decltype(build_pass(0U))>;
+  static_assert(
+    is_pass_node_tuple<pass_tuple>,
+    "fiat::repeat pass builder must return a non-empty std::tuple of "
+    "graph_node");
+
+  std::array<pass_tuple, Count> passes {};
+  for (const auto pass : std::views::indices(static_cast<std::uint32_t>(Count)))
+  {
+    passes[ pass ] = build_pass(pass);
+  }
+
+  const auto all_ports = collect_pass_ports(passes);
+  validate_repeat_psses<Count, std::tuple_size_v<decltype(all_ports)> / Count>(
+    all_ports);
+
+  auto all_nodes           = flatten_passes(passes);
+  auto analysis            = analyze(all_nodes);
+  analysis.pass_count      = Count;
+  analysis.pass_node_count = std::tuple_size_v<pass_tuple>;
+  return graph {
+    .nodes    = std::move(all_nodes),
+    .analysis = std::move(analysis),
+  };
+}
+
 } // namespace fiat
