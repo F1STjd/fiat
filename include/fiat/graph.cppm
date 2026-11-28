@@ -750,7 +750,7 @@ collect_pass_ports(const std::array<std::tuple<PassNodes...>, Count>& passes)
 template<std::size_t Count, std::size_t PassPortCount>
 consteval
 void
-validate_repeat_psses(
+validate_repeat_passes(
   const std::array<graph_port, Count * PassPortCount>& ports)
 {
   if constexpr (Count <= 1UZ) { return; }
@@ -1033,7 +1033,7 @@ analyze_repeated(const std::array<std::tuple<PassNodes...>, Count>& passes)
   {
     if ((lane_writes(lane) % 2UZ == 0UZ) != ends_on_source)
     {
-      graph_error("graph ping-pong lanes end on differnet sides");
+      graph_error("graph ping-pong lanes end on different sides");
     }
   }
   return result;
@@ -1058,7 +1058,7 @@ repeat(PassBuilder build_pass)
   }
 
   const auto all_ports = collect_pass_ports(passes);
-  validate_repeat_psses<Count, std::tuple_size_v<decltype(all_ports)> / Count>(
+  validate_repeat_passes<Count, std::tuple_size_v<decltype(all_ports)> / Count>(
     all_ports);
 
   auto all_nodes = flatten_passes(passes);
