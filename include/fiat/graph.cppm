@@ -1031,7 +1031,7 @@ analyze_repeated(const std::array<std::tuple<PassNodes...>, Count>& passes)
   for (
     const auto& lane : std::span {lanes.lanes}.subspan(1UZ, lanes.count - 1UZ))
   {
-    if ((lane_writes(lane) % 2UZ) != ends_on_source)
+    if ((lane_writes(lane) % 2UZ == 0UZ) != ends_on_source)
     {
       graph_error("graph ping-pong lanes end on differnet sides");
     }

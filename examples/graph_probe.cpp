@@ -498,6 +498,15 @@ static_assert(
     .region   = fiat::graph_buffer_region::external,
   });
 
+constexpr auto graph_nine = fiat::repeat<8UZ>(radix_companion_pass);
+static_assert(graph_nine.analysis.ping_pong_pass_count == 8UZ);
+static_assert(
+  graph_nine.analysis.final_allocation ==
+  fiat::graph_allocation {
+    .identity = 0UZ,
+    .region   = fiat::graph_buffer_region::external,
+  });
+
   #if 0
 constexpr auto graph_five = fiat::make_node(
   fiat::reduce(fiat::plus {}, 0U), float_source);
